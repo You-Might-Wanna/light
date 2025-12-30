@@ -1,7 +1,7 @@
 import { ulid } from 'ulid';
 import type { AuditLogEntry, AuditAction, PaginatedResponse } from '@ledger/shared';
 import { config } from '../config.js';
-import { putItem, queryItems, encodeCursor, decodeCursor } from '../dynamodb.js';
+import { putItem, queryItems, encodeCursor, decodeCursor, stripKeys } from '../dynamodb.js';
 import type { AuditQueryInput } from '../validation.js';
 
 const TABLE = config.tables.audit;
@@ -90,7 +90,7 @@ export async function listAuditLogs(
     ExclusiveStartKey: exclusiveStartKey,
   });
 
-  const logs = items.map(({ PK, SK, ...log }) => log as AuditLogEntry);
+  const logs = items.map((item) => stripKeys(item));
 
   return {
     items: logs,
@@ -118,7 +118,7 @@ export async function listAuditLogsByActor(
     ExclusiveStartKey: exclusiveStartKey,
   });
 
-  const logs = items.map(({ PK, SK, ...log }) => log as AuditLogEntry);
+  const logs = items.map((item) => stripKeys(item));
 
   return {
     items: logs,

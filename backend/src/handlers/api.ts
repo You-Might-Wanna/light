@@ -126,21 +126,21 @@ const routes: Record<string, Record<string, RouteHandler>> = {
 
   // Entities
   'GET /entities': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const query = entityQuerySchema.parse(getQueryParams(event));
       const result = await entityService.listEntities(query);
       return jsonResponse(200, result);
     },
   },
   'GET /entities/{entityId}': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const entityId = getPathParam(event, 'entityId');
       const entity = await entityService.getEntity(entityId);
       return jsonResponse(200, entity);
     },
   },
   'GET /entities/{entityId}/cards': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const entityId = getPathParam(event, 'entityId');
       const query = entityCardsQuerySchema.parse(getQueryParams(event));
       // Only show published cards to public
@@ -152,14 +152,14 @@ const routes: Record<string, Record<string, RouteHandler>> = {
 
   // Cards
   'GET /cards': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const query = cardQuerySchema.parse(getQueryParams(event));
       const result = await cardService.listPublishedCards(query);
       return jsonResponse(200, result);
     },
   },
   'GET /cards/{cardId}': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const cardId = getPathParam(event, 'cardId');
       const card = await cardService.getCardWithEntities(cardId);
       // Only return if published (or related statuses visible to public)
@@ -173,7 +173,7 @@ const routes: Record<string, Record<string, RouteHandler>> = {
 
   // Sources
   'GET /sources/{sourceId}': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const sourceId = getPathParam(event, 'sourceId');
       const source = await sourceService.getSource(sourceId);
       // Return only public metadata
@@ -189,14 +189,14 @@ const routes: Record<string, Record<string, RouteHandler>> = {
     },
   },
   'GET /sources/{sourceId}/download': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const sourceId = getPathParam(event, 'sourceId');
       const result = await sourceService.generateDownloadUrl(sourceId);
       return jsonResponse(200, result);
     },
   },
   'GET /sources/{sourceId}/verification': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const sourceId = getPathParam(event, 'sourceId');
       const result = await sourceService.getSourceVerification(sourceId);
       return jsonResponse(200, result);
@@ -410,7 +410,7 @@ const routes: Record<string, Record<string, RouteHandler>> = {
 
   // Admin: Audit
   'GET /admin/audit': {
-    handler: async (event, ctx) => {
+    handler: async (event, _ctx) => {
       const query = auditQuerySchema.parse(getQueryParams(event));
       const result = await auditService.listAuditLogs(query);
       return jsonResponse(200, result);
@@ -464,7 +464,7 @@ function matchRoute(
 // Main handler
 export async function handler(
   event: APIGatewayProxyEventV2,
-  context: Context
+  _context: Context
 ): Promise<APIGatewayProxyResultV2> {
   const requestId = event.requestContext.requestId;
   const logger = createRequestLogger(requestId);

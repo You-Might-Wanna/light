@@ -7,6 +7,7 @@ import {
   queryItems,
   encodeCursor,
   decodeCursor,
+  stripKeys,
 } from '../dynamodb.js';
 import { NotFoundError } from '../errors.js';
 import type { CreateEntityInput, UpdateEntityInput, EntityQueryInput } from '../validation.js';
@@ -20,7 +21,7 @@ function normalizeName(name: string): string {
 
 export async function createEntity(
   input: CreateEntityInput,
-  userId: string
+  _userId: string
 ): Promise<Entity> {
   const now = new Date().toISOString();
   const entityId = ulid();
@@ -64,14 +65,13 @@ export async function getEntity(entityId: string): Promise<Entity> {
     throw new NotFoundError('Entity', entityId);
   }
 
-  const { PK, SK, ...entity } = item;
-  return entity as Entity;
+  return stripKeys(item);
 }
 
 export async function updateEntity(
   entityId: string,
   input: UpdateEntityInput,
-  userId: string
+  _userId: string
 ): Promise<Entity> {
   const existing = await getEntity(entityId);
   const now = new Date().toISOString();
@@ -116,7 +116,7 @@ export async function listEntities(
       ExclusiveStartKey: exclusiveStartKey,
     });
 
-    const entities = items.map(({ PK, SK, ...entity }) => entity as Entity);
+    const entities = items.map((item) => stripKeys(item));
 
     return {
       items: entities,
@@ -138,7 +138,7 @@ export async function listEntities(
     ExclusiveStartKey: exclusiveStartKey,
   });
 
-  const entities = items.map(({ PK, SK, ...entity }) => entity as Entity);
+  const entities = items.map((item) => stripKeys(item));
 
   return {
     items: entities,

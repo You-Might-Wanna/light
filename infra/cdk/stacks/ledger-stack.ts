@@ -9,7 +9,6 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as kms from 'aws-cdk-lib/aws-kms';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 
@@ -86,7 +85,7 @@ export class LedgerStack extends cdk.Stack {
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: environment === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
@@ -104,7 +103,7 @@ export class LedgerStack extends cdk.Stack {
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: environment === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
@@ -128,7 +127,7 @@ export class LedgerStack extends cdk.Stack {
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: environment === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
@@ -140,7 +139,7 @@ export class LedgerStack extends cdk.Stack {
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: environment === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
@@ -215,6 +214,14 @@ export class LedgerStack extends cdk.Stack {
     // ============================================================
     // Lambda Function
     // ============================================================
+    const apiLogGroup = new logs.LogGroup(this, 'ApiLogGroup', {
+      logGroupName: `/aws/lambda/${prefix}-api`,
+      retention: logs.RetentionDays.TWO_WEEKS,
+      removalPolicy: environment === 'prod'
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
+    });
+
     const apiFunction = new lambda.Function(this, 'ApiFunction', {
       functionName: `${prefix}-api`,
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -234,7 +241,7 @@ export class LedgerStack extends cdk.Stack {
         KMS_SIGNING_KEY_ID: signingKey.keyId,
         LOG_LEVEL: environment === 'prod' ? 'info' : 'debug',
       },
-      logRetention: logs.RetentionDays.TWO_WEEKS,
+      logGroup: apiLogGroup,
     });
 
     // Grant permissions
@@ -351,21 +358,9 @@ export class LedgerStack extends cdk.Stack {
     // ============================================================
     // CloudFront Distribution
     // ============================================================
-    const originAccessIdentity = new cloudfront.OriginAccessIdentity(
-      this,
-      'OAI',
-      {
-        comment: `${prefix} OAI`,
-      }
-    );
-
-    siteBucket.grantRead(originAccessIdentity);
-
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
-        origin: new cloudfrontOrigins.S3Origin(siteBucket, {
-          originAccessIdentity,
-        }),
+        origin: cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(siteBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
       },

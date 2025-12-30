@@ -8,6 +8,7 @@ import {
   transactWrite,
   encodeCursor,
   decodeCursor,
+  stripKeys,
 } from '../dynamodb.js';
 import { NotFoundError, InvalidStateTransitionError, SourceNotVerifiedError } from '../errors.js';
 import { getSource } from './sources.js';
@@ -86,8 +87,7 @@ export async function getCard(cardId: string, version?: number): Promise<Evidenc
       throw new NotFoundError('Card', `${cardId}@v${version}`);
     }
 
-    const { PK, SK, ...card } = item;
-    return card as EvidenceCard;
+    return stripKeys(item);
   }
 
   // Get latest version
@@ -106,8 +106,7 @@ export async function getCard(cardId: string, version?: number): Promise<Evidenc
     throw new NotFoundError('Card', cardId);
   }
 
-  const { PK, SK, ...card } = items[0];
-  return card as EvidenceCard;
+  return stripKeys(items[0]);
 }
 
 export async function getCardWithEntities(
@@ -382,7 +381,7 @@ export async function listPublishedCards(
     ExclusiveStartKey: exclusiveStartKey,
   });
 
-  const cards = items.map(({ PK, SK, ...card }) => card as EvidenceCard);
+  const cards = items.map((item) => stripKeys(item));
 
   return {
     items: cards,
@@ -412,7 +411,7 @@ export async function listEntityCards(
     ExclusiveStartKey: exclusiveStartKey,
   });
 
-  const cards = items.map(({ PK, SK, ...card }) => card as EvidenceCard);
+  const cards = items.map((item) => stripKeys(item));
 
   return {
     items: cards,

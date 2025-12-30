@@ -7,11 +7,9 @@ import type {
   DownloadUrlResponse,
   SourceVerificationResponse,
   VerificationStatus,
-  ALLOWED_MIME_TYPES,
-  MAX_FILE_SIZE_BYTES,
 } from '@ledger/shared';
 import { config } from '../config.js';
-import { getItem, putItem } from '../dynamodb.js';
+import { getItem, putItem, stripKeys } from '../dynamodb.js';
 import {
   getPresignedUploadUrl,
   getPresignedDownloadUrl,
@@ -78,8 +76,7 @@ export async function getSource(sourceId: string): Promise<Source> {
     throw new NotFoundError('Source', sourceId);
   }
 
-  const { PK, SK, ...source } = item;
-  return source as Source;
+  return stripKeys(item);
 }
 
 export async function updateSource(
