@@ -1,4 +1,4 @@
-import type { DocType, VerificationStatus } from './enums.js';
+import type { DocType, VerificationStatus } from './enums';
 
 // Source - a public record or document
 export interface Source {

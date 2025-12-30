@@ -31,7 +31,6 @@ export default function AdminSourceNewPage() {
   // File upload
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
 
   async function handleCreateSource(e: React.FormEvent) {
     e.preventDefault();

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { EvidenceCard, Entity, Source, CardCategory, EvidenceStrength, ScoreSignals } from '@ledger/shared';
+import type { CardCategory, EvidenceStrength, ScoreSignals } from '@ledger/shared';
 import { api } from '../../lib/api';
 
 const categories: Array<{ value: CardCategory; label: string }> = [

@@ -1,4 +1,4 @@
-import type { EntityType } from './enums.js';
+import type { EntityType } from './enums';
 
 // Entity identifiers (public records only)
 export interface EntityIdentifiers {

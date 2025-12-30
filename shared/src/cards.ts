@@ -1,4 +1,4 @@
-import type { CardCategory, CardStatus, EvidenceStrength } from './enums.js';
+import type { CardCategory, CardStatus, EvidenceStrength } from './enums';
 
 // Score signals for transparent scoring (0-5 each)
 export interface ScoreSignals {

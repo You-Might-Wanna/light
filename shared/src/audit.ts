@@ -1,4 +1,4 @@
-import type { AuditAction } from './enums.js';
+import type { AuditAction } from './enums';
 
 // Audit log entry
 export interface AuditLogEntry {
