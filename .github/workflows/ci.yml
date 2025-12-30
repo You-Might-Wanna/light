@@ -94,7 +94,6 @@ jobs:
 
       - name: Run tests
         run: npm run test --workspaces --if-present
-        continue-on-error: true  # No tests yet, will pass once tests are added
 
   security:
     name: Security Checks
