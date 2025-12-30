@@ -51,7 +51,11 @@ function getPathParam(event: APIGatewayProxyEventV2, name: string): string {
 
 // Parse query parameters
 function getQueryParams(event: APIGatewayProxyEventV2): Record<string, string> {
-  return event.queryStringParameters || {};
+  const params = event.queryStringParameters || {};
+  // Filter out undefined values
+  return Object.fromEntries(
+    Object.entries(params).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
 }
 
 // Parse JSON body
@@ -98,7 +102,11 @@ function checkReadOnly(method: string): void {
 
 // Extract user ID from JWT claims
 function getUserIdFromEvent(event: APIGatewayProxyEventV2): string | undefined {
-  const claims = event.requestContext.authorizer?.jwt?.claims;
+  // Type assertion needed for JWT authorizer claims - requestContext type varies by authorizer configuration
+  const requestContext = event.requestContext as unknown as {
+    authorizer?: { jwt?: { claims?: Record<string, unknown> } }
+  };
+  const claims = requestContext.authorizer?.jwt?.claims;
   return claims?.sub as string | undefined;
 }
 
@@ -509,7 +517,9 @@ export async function handler(
     // Execute handler
     const response = await match.handler(event, handlerContext);
 
-    logger.info({ statusCode: response.statusCode }, 'Request completed');
+    // Log status code if available (response can be string for HTTP API format 2.0)
+    const statusCode = typeof response === 'object' && response !== null ? (response as { statusCode?: number }).statusCode : undefined;
+    logger.info({ statusCode }, 'Request completed');
 
     return response;
   } catch (error) {
