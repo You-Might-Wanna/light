@@ -8,6 +8,7 @@ import type { HealthResponse, ApiError } from '@ledger/shared';
 import { config } from '../lib/config.js';
 import { createRequestLogger, type Logger } from '../lib/logger.js';
 import { AppError, ReadOnlyModeError, ValidationError } from '../lib/errors.js';
+import { isReadOnlyMode } from '../lib/ssm.js';
 
 // Services
 import * as entityService from '../lib/services/entities.js';
@@ -93,9 +94,13 @@ function requiresAdmin(method: string, path: string): boolean {
   return path.startsWith('/admin/');
 }
 
-// Check read-only mode
-function checkReadOnly(method: string): void {
-  if (config.features.readOnly && method !== 'GET' && method !== 'OPTIONS') {
+// Check read-only mode (async to support SSM parameter lookup)
+async function checkReadOnly(method: string): Promise<void> {
+  if (method === 'GET' || method === 'OPTIONS') {
+    return;
+  }
+  const readOnly = await isReadOnlyMode();
+  if (readOnly) {
     throw new ReadOnlyModeError();
   }
 }
@@ -475,7 +480,7 @@ export async function handler(
 
   try {
     // Check read-only mode for writes
-    checkReadOnly(method);
+    await checkReadOnly(method);
 
     // Match route
     const match = matchRoute(method, path);

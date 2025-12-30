@@ -10,6 +10,8 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
 export interface LedgerStackProps extends cdk.StackProps {
@@ -41,6 +43,49 @@ export class LedgerStack extends cdk.Stack {
     // ============================================================
     // S3 Buckets
     // ============================================================
+
+    // Immutable backup bucket with Object Lock (prod only)
+    let backupBucket: s3.IBucket | undefined;
+    if (environment === 'prod') {
+      const cfnBackupBucket = new s3.CfnBucket(this, 'BackupBucketCfn', {
+        bucketName: `${prefix}-backups-${this.account}`,
+        objectLockEnabled: true,
+        objectLockConfiguration: {
+          objectLockEnabled: 'Enabled',
+          rule: {
+            defaultRetention: {
+              mode: 'GOVERNANCE',
+              years: 7,
+            },
+          },
+        },
+        versioningConfiguration: {
+          status: 'Enabled',
+        },
+        bucketEncryption: {
+          serverSideEncryptionConfiguration: [
+            {
+              serverSideEncryptionByDefault: {
+                sseAlgorithm: 'AES256',
+              },
+            },
+          ],
+        },
+        publicAccessBlockConfiguration: {
+          blockPublicAcls: true,
+          blockPublicPolicy: true,
+          ignorePublicAcls: true,
+          restrictPublicBuckets: true,
+        },
+      });
+      cfnBackupBucket.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+
+      backupBucket = s3.Bucket.fromBucketName(
+        this,
+        'BackupBucket',
+        cfnBackupBucket.ref
+      );
+    }
 
     // Sources bucket (private, versioned)
     const sourcesBucket = new s3.Bucket(this, 'SourcesBucket', {
@@ -212,6 +257,16 @@ export class LedgerStack extends cdk.Stack {
     });
 
     // ============================================================
+    // SSM Parameters
+    // ============================================================
+    const readOnlyParam = new ssm.StringParameter(this, 'ReadOnlyParameter', {
+      parameterName: `/${prefix}/readonly`,
+      stringValue: 'false',
+      description: 'Set to "true" to enable read-only mode (blocks all write operations)',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    // ============================================================
     // Lambda Function
     // ============================================================
     const apiLogGroup = logs.LogGroup.fromLogGroupName(
@@ -239,6 +294,7 @@ export class LedgerStack extends cdk.Stack {
         SOURCES_BUCKET: sourcesBucket.bucketName,
         KMS_SIGNING_KEY_ID: signingKey.keyId,
         LOG_LEVEL: environment === 'prod' ? 'info' : 'debug',
+        READONLY_PARAM_NAME: readOnlyParam.parameterName,
       },
     });
 
@@ -250,6 +306,10 @@ export class LedgerStack extends cdk.Stack {
     idempotencyTable.grantReadWriteData(apiFunction);
     sourcesBucket.grantReadWrite(apiFunction);
     signingKey.grant(apiFunction, 'kms:Sign', 'kms:GetPublicKey');
+    readOnlyParam.grantRead(apiFunction);
+    if (backupBucket) {
+      backupBucket.grantWrite(apiFunction);
+    }
 
     // ============================================================
     // API Gateway
@@ -354,9 +414,77 @@ export class LedgerStack extends cdk.Stack {
     });
 
     // ============================================================
+    // WAF Web ACL (for CloudFront)
+    // ============================================================
+    const webAcl = new wafv2.CfnWebACL(this, 'WebAcl', {
+      name: `${prefix}-waf`,
+      scope: 'CLOUDFRONT',
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: `${prefix}-waf`,
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        // Rate limit: 1000 requests per 5 minutes per IP
+        {
+          name: 'RateLimitRule',
+          priority: 1,
+          action: { block: {} },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `${prefix}-rate-limit`,
+            sampledRequestsEnabled: true,
+          },
+          statement: {
+            rateBasedStatement: {
+              limit: 1000,
+              aggregateKeyType: 'IP',
+            },
+          },
+        },
+        // AWS Managed Rules - Common Rule Set
+        {
+          name: 'AWSManagedRulesCommonRuleSet',
+          priority: 2,
+          overrideAction: { none: {} },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `${prefix}-common-rules`,
+            sampledRequestsEnabled: true,
+          },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesCommonRuleSet',
+            },
+          },
+        },
+        // AWS Managed Rules - Known Bad Inputs
+        {
+          name: 'AWSManagedRulesKnownBadInputsRuleSet',
+          priority: 3,
+          overrideAction: { none: {} },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `${prefix}-bad-inputs`,
+            sampledRequestsEnabled: true,
+          },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesKnownBadInputsRuleSet',
+            },
+          },
+        },
+      ],
+    });
+
+    // ============================================================
     // CloudFront Distribution
     // ============================================================
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
+      webAclId: webAcl.attrArn,
       defaultBehavior: {
         origin: cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(siteBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -426,5 +554,12 @@ export class LedgerStack extends cdk.Stack {
       value: signingKey.keyId,
       description: 'KMS Signing Key ID',
     });
+
+    if (backupBucket) {
+      new cdk.CfnOutput(this, 'BackupBucketName', {
+        value: backupBucket.bucketName,
+        description: 'Immutable Backup S3 Bucket (Object Lock enabled)',
+      });
+    }
   }
 }

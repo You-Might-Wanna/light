@@ -1,0 +1,191 @@
+name: Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Validate tag format
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Tag must follow semantic versioning format (v1.2.3)"
+            exit 1
+          fi
+          echo "Valid tag: $TAG"
+
+      - name: Ensure tag is on main branch
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
+            echo "Error: Tag must be created from main branch"
+            exit 1
+          fi
+          echo "Tag is on main branch"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+
+      - name: Run tests
+        run: npm run test --workspaces --if-present
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: backend-dist
+          path: backend/dist/
+          retention-days: 30
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 30
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared types
+        run: npm run build -w @ledger/shared
+
+      - name: Download backend artifact
+        uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
+        with:
+          name: backend-dist
+          path: backend/dist/
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: CDK Diff
+        working-directory: infra/cdk
+        run: npx cdk diff LedgerProdStack
+        env:
+          DOMAIN_NAME: ${{ env.DOMAIN_NAME }}
+
+      - name: CDK Deploy
+        working-directory: infra/cdk
+        run: npx cdk deploy LedgerProdStack --require-approval never
+        env:
+          DOMAIN_NAME: ${{ env.DOMAIN_NAME }}
+
+      - name: Get CloudFront Distribution ID
+        id: cloudfront
+        working-directory: infra/cdk
+        run: |
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name LedgerProdStack \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+            --output text)
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+
+      - name: Get S3 Site Bucket
+        id: s3
+        working-directory: infra/cdk
+        run: |
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name LedgerProdStack \
+            --query "Stacks[0].Outputs[?OutputKey=='SiteBucketName'].OutputValue" \
+            --output text)
+          echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
+
+      - name: Deploy Frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ steps.s3.outputs.bucket }}/ \
+            --delete \
+            --cache-control "max-age=31536000,immutable" \
+            --exclude "*.html" \
+            --exclude "*.json"
+          aws s3 sync frontend/dist/ s3://${{ steps.s3.outputs.bucket }}/ \
+            --cache-control "max-age=0,no-cache,no-store,must-revalidate" \
+            --include "*.html" \
+            --include "*.json"
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.cloudfront.outputs.distribution_id }} \
+            --paths "/*"
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+
+    steps:
+      - name: Report deployment status
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "::notice::Production deployment of ${{ github.ref_name }} completed successfully!"
+          else
+            echo "::error::Production deployment of ${{ github.ref_name }} failed!"
+            exit 1
+          fi
