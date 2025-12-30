@@ -1,0 +1,24 @@
+{
+  "name": "@ledger/infra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy:dev": "cdk deploy LedgerDevStack --require-approval never",
+    "deploy:prod": "cdk deploy LedgerProdStack --require-approval broadening",
+    "diff": "cdk diff",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.120.0",
+    "constructs": "^10.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "aws-cdk": "^2.120.0",
+    "typescript": "^5.3.3"
+  }
+}

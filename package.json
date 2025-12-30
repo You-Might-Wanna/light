@@ -1,0 +1,25 @@
+{
+  "name": "accountability-ledger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public accountability ledger platform for tracking corporate/government misconduct with verifiable evidence",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend",
+    "infra/cdk"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
