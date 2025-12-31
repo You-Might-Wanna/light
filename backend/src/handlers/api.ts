@@ -15,6 +15,7 @@ import * as entityService from '../lib/services/entities.js';
 import * as sourceService from '../lib/services/sources.js';
 import * as cardService from '../lib/services/cards.js';
 import * as auditService from '../lib/services/audit.js';
+import * as intakeService from '../lib/services/intake.js';
 
 // Validation schemas
 import {
@@ -30,6 +31,8 @@ import {
   entityQuerySchema,
   entityCardsQuerySchema,
   auditQuerySchema,
+  intakeQuerySchema,
+  intakePromoteSchema,
 } from '../lib/validation.js';
 
 // Route handler type
@@ -451,6 +454,173 @@ const routes: Record<string, Record<string, RouteHandler>> = {
       const query = auditQuerySchema.parse(getQueryParams(event));
       const result = await auditService.listAuditLogs(query);
       return jsonResponse(200, result);
+    },
+  },
+
+  // Admin: Intake
+  'GET /admin/intake': {
+    handler: async (event, _ctx) => {
+      const query = intakeQuerySchema.parse(getQueryParams(event));
+      const result = await intakeService.listIntakeByStatus(
+        query.status,
+        query.limit,
+        query.cursor ? JSON.parse(Buffer.from(query.cursor, 'base64').toString()) : undefined
+      );
+      return jsonResponse(200, {
+        items: result.items,
+        nextToken: result.lastEvaluatedKey
+          ? Buffer.from(JSON.stringify(result.lastEvaluatedKey)).toString('base64')
+          : undefined,
+      });
+    },
+  },
+  'GET /admin/intake/{intakeId}': {
+    handler: async (event, _ctx) => {
+      const intakeId = getPathParam(event, 'intakeId');
+      const item = await intakeService.getIntakeItem(intakeId);
+      return jsonResponse(200, item);
+    },
+  },
+  'POST /admin/intake/{intakeId}/reject': {
+    handler: async (event, ctx) => {
+      const intakeId = getPathParam(event, 'intakeId');
+      // First get the item to get feedId and publishedAt
+      const existing = await intakeService.getIntakeItem(intakeId);
+      const item = await intakeService.rejectIntakeItem(
+        existing.feedId,
+        existing.publishedAt,
+        intakeId,
+        ctx.userId!
+      );
+      await auditService.logAuditEvent(
+        'REJECT_INTAKE',
+        'intake',
+        intakeId,
+        ctx.userId!,
+        { requestId: ctx.requestId, metadata: { title: item.title } }
+      );
+      return jsonResponse(200, item);
+    },
+  },
+  'POST /admin/intake/{intakeId}/promote': {
+    handler: async (event, ctx) => {
+      const intakeId = getPathParam(event, 'intakeId');
+      const input = intakePromoteSchema.parse(parseBody(event));
+
+      // Get the intake item
+      const intakeItem = await intakeService.getIntakeItem(intakeId);
+
+      // Determine entity ID (use existing or create new)
+      let entityId: string;
+      if (input.entityId) {
+        entityId = input.entityId;
+      } else if (input.createEntity) {
+        const entity = await entityService.createEntity(
+          {
+            name: input.createEntity.name,
+            type: input.createEntity.type,
+            aliases: [],
+          },
+          ctx.userId!
+        );
+        entityId = entity.entityId;
+        await auditService.logAuditEvent(
+          'CREATE_ENTITY',
+          'entity',
+          entityId,
+          ctx.userId!,
+          { requestId: ctx.requestId, metadata: { fromIntake: intakeId } }
+        );
+      } else {
+        throw new ValidationError('Either entityId or createEntity must be provided');
+      }
+
+      // Create source from intake item
+      const source = await sourceService.createSource(
+        {
+          title: intakeItem.title,
+          publisher: intakeItem.publisher,
+          url: intakeItem.canonicalUrl,
+          docType: 'HTML',
+          excerpt: intakeItem.summary,
+        },
+        ctx.userId!
+      );
+      await auditService.logAuditEvent(
+        'CREATE_SOURCE',
+        'source',
+        source.sourceId,
+        ctx.userId!,
+        { requestId: ctx.requestId, metadata: { fromIntake: intakeId } }
+      );
+
+      // Capture HTML snapshot from the URL
+      // This fetches the page, computes SHA-256, uploads to S3, and creates signed manifest
+      let verifiedSource = source;
+      try {
+        verifiedSource = await sourceService.captureHtmlSnapshot(
+          source.sourceId,
+          intakeItem.canonicalUrl,
+          ctx.userId!
+        );
+        ctx.logger.info('HTML snapshot captured', {
+          sourceId: source.sourceId,
+          sha256: verifiedSource.sha256,
+          byteLength: verifiedSource.byteLength,
+        });
+      } catch (snapshotError) {
+        // Log warning but don't fail the promotion - source is still created
+        ctx.logger.warn('Failed to capture HTML snapshot', {
+          sourceId: source.sourceId,
+          url: intakeItem.canonicalUrl,
+          error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+        });
+      }
+
+      // Create card from intake item
+      const card = await cardService.createCard(
+        {
+          title: intakeItem.title,
+          claim: intakeItem.title,
+          summary: input.cardSummary,
+          category: 'consumer',
+          entityIds: [entityId],
+          eventDate: intakeItem.publishedAt.split('T')[0],
+          sourceRefs: [source.sourceId],
+          evidenceStrength: 'HIGH',
+          tags: input.tags || intakeItem.suggestedTags || [],
+        },
+        ctx.userId!
+      );
+      await auditService.logAuditEvent(
+        'CREATE_CARD',
+        'card',
+        card.cardId,
+        ctx.userId!,
+        { requestId: ctx.requestId, metadata: { fromIntake: intakeId } }
+      );
+
+      // Mark intake item as promoted
+      await intakeService.markIntakePromoted(
+        intakeItem.feedId,
+        intakeItem.publishedAt,
+        intakeId,
+        source.sourceId,
+        card.cardId,
+        ctx.userId!
+      );
+      await auditService.logAuditEvent(
+        'PROMOTE_INTAKE',
+        'intake',
+        intakeId,
+        ctx.userId!,
+        { requestId: ctx.requestId, metadata: { sourceId: source.sourceId, cardId: card.cardId } }
+      );
+
+      return jsonResponse(201, {
+        sourceId: source.sourceId,
+        cardId: card.cardId,
+      });
     },
   },
 };

@@ -14,6 +14,10 @@ import type {
   CreateSourceRequest,
   CreateCardRequest,
   UpdateCardRequest,
+  IntakeItem,
+  IntakeStatus,
+  IntakePromoteRequest,
+  IntakePromoteResponse,
 } from '@ledger/shared';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -227,6 +231,40 @@ class ApiClient {
   async restoreCard(cardId: string): Promise<EvidenceCard> {
     return this.request(`/admin/cards/${cardId}/restore`, {
       method: 'POST',
+    });
+  }
+
+  // Admin: Intake
+  async listIntake(params?: {
+    status?: IntakeStatus;
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: IntakeItem[]; nextToken?: string }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.cursor) searchParams.set('cursor', params.cursor);
+    const qs = searchParams.toString();
+    return this.request(`/admin/intake${qs ? `?${qs}` : ''}`);
+  }
+
+  async getIntakeItem(intakeId: string): Promise<IntakeItem> {
+    return this.request(`/admin/intake/${intakeId}`);
+  }
+
+  async rejectIntake(intakeId: string): Promise<IntakeItem> {
+    return this.request(`/admin/intake/${intakeId}/reject`, {
+      method: 'POST',
+    });
+  }
+
+  async promoteIntake(
+    intakeId: string,
+    data: IntakePromoteRequest
+  ): Promise<IntakePromoteResponse> {
+    return this.request(`/admin/intake/${intakeId}/promote`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 }

@@ -10,8 +10,9 @@ import type {
   IntakeRunSummary,
 } from '@ledger/shared';
 import { config } from '../config.js';
-import { putItem, queryItems } from '../dynamodb.js';
+import { putItem, getItem, queryItems, stripKeys } from '../dynamodb.js';
 import { logger } from '../logger.js';
+import { NotFoundError } from '../errors.js';
 import feedsConfig from '../../config/feeds.json' with { type: 'json' };
 
 const TABLE = config.tables.intake;
@@ -453,32 +454,126 @@ export async function listIntakeByStatus(
 }
 
 /**
- * Update intake item status
+ * Get a single intake item by its composite key
  */
-export async function updateIntakeStatus(
+export async function getIntakeItem(intakeId: string): Promise<IntakeItem> {
+  // We need to find the item by intakeId - query GSI2 which has DEDUPE#key -> intakeId
+  // But we don't have an index on intakeId directly, so we scan the table
+  // For a production system, you'd add another GSI or use a different key strategy
+
+  // First, try to find via GSI2 by querying all feeds
+  // This is inefficient but works for MVP - in production, add GSI on intakeId
+  const result = await queryItems<IntakeItem & { PK: string; SK: string }>({
+    TableName: TABLE,
+    IndexName: 'GSI2',
+    KeyConditionExpression: 'GSI2SK = :id',
+    ExpressionAttributeValues: {
+      ':id': intakeId,
+    },
+    Limit: 1,
+  });
+
+  if (result.items.length === 0) {
+    throw new NotFoundError('Intake item', intakeId);
+  }
+
+  return stripKeys(result.items[0]);
+}
+
+/**
+ * Get intake item by feed and SK components
+ */
+export async function getIntakeItemByKey(
+  feedId: string,
+  publishedAt: string,
+  intakeId: string
+): Promise<IntakeItem> {
+  const item = await getItem<IntakeItem & { PK: string; SK: string }>({
+    TableName: TABLE,
+    Key: {
+      PK: `FEED#${feedId}`,
+      SK: `TS#${publishedAt}#${intakeId}`,
+    },
+  });
+
+  if (!item) {
+    throw new NotFoundError('Intake item', intakeId);
+  }
+
+  return stripKeys(item);
+}
+
+/**
+ * Update intake item status (reject)
+ */
+export async function rejectIntakeItem(
   feedId: string,
   publishedAt: string,
   intakeId: string,
-  newStatus: IntakeStatus,
   userId: string
-): Promise<void> {
+): Promise<IntakeItem> {
+  // Get existing item first
+  const existing = await getIntakeItemByKey(feedId, publishedAt, intakeId);
   const now = new Date().toISOString();
 
-  // We need to delete old item and create new one because GSI1PK changes
-  // This is a simplification - in production you might want to use a transaction
+  const updated: IntakeItem = {
+    ...existing,
+    status: 'REJECTED',
+    reviewedAt: now,
+    reviewedBy: userId,
+  };
 
-  // For now, just update in place (GSI will be inconsistent until next write)
   await putItem({
     TableName: TABLE,
     Item: {
       PK: `FEED#${feedId}`,
       SK: `TS#${publishedAt}#${intakeId}`,
-      GSI1PK: `STATUS#${newStatus}`,
+      GSI1PK: 'STATUS#REJECTED',
       GSI1SK: `TS#${now}`,
-      status: newStatus,
-      reviewedAt: now,
-      reviewedBy: userId,
+      GSI2PK: `DEDUPE#${existing.dedupeKey}`,
+      GSI2SK: intakeId,
+      ...updated,
     },
-    ConditionExpression: 'attribute_exists(PK)',
   });
+
+  return updated;
+}
+
+/**
+ * Mark intake item as promoted (after source/card creation)
+ */
+export async function markIntakePromoted(
+  feedId: string,
+  publishedAt: string,
+  intakeId: string,
+  sourceId: string,
+  cardId: string,
+  userId: string
+): Promise<IntakeItem> {
+  const existing = await getIntakeItemByKey(feedId, publishedAt, intakeId);
+  const now = new Date().toISOString();
+
+  const updated: IntakeItem = {
+    ...existing,
+    status: 'PROMOTED',
+    promotedSourceId: sourceId,
+    promotedCardId: cardId,
+    reviewedAt: now,
+    reviewedBy: userId,
+  };
+
+  await putItem({
+    TableName: TABLE,
+    Item: {
+      PK: `FEED#${feedId}`,
+      SK: `TS#${publishedAt}#${intakeId}`,
+      GSI1PK: 'STATUS#PROMOTED',
+      GSI1SK: `TS#${now}`,
+      GSI2PK: `DEDUPE#${existing.dedupeKey}`,
+      GSI2SK: intakeId,
+      ...updated,
+    },
+  });
+
+  return updated;
 }

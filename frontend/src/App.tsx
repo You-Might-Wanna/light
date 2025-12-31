@@ -15,6 +15,7 @@ import AdminDashboardPage from './pages/admin/DashboardPage';
 import AdminCardEditPage from './pages/admin/CardEditPage';
 import AdminSourceNewPage from './pages/admin/SourceNewPage';
 import AdminReviewQueuePage from './pages/admin/ReviewQueuePage';
+import AdminIntakeInboxPage from './pages/admin/IntakeInboxPage';
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
           <Route path="cards/:cardId/edit" element={<AdminCardEditPage />} />
           <Route path="sources/new" element={<AdminSourceNewPage />} />
           <Route path="review-queue" element={<AdminReviewQueuePage />} />
+          <Route path="intake" element={<AdminIntakeInboxPage />} />
         </Route>
       </Routes>
     </AuthProvider>

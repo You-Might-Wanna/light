@@ -343,3 +343,121 @@ function getExtensionForMimeType(mimeType: string): string {
   };
   return map[mimeType] || 'bin';
 }
+
+/**
+ * Capture HTML snapshot from a URL and store it in S3
+ * Used during intake promotion to preserve source content
+ */
+export async function captureHtmlSnapshot(
+  sourceId: string,
+  url: string,
+  userId: string,
+  maxBytes: number = 5 * 1024 * 1024 // 5 MB default
+): Promise<Source> {
+  const source = await getSource(sourceId);
+
+  // Fetch the URL
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'AccountabilityLedger/1.0 (https://accountabilityledger.org)',
+        Accept: 'text/html,application/xhtml+xml,*/*',
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get('content-type') || 'text/html';
+    const contentLength = response.headers.get('content-length');
+
+    // Check content length if available
+    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+      throw new FileTooLargeError(maxBytes);
+    }
+
+    // Read response body
+    const htmlBuffer = Buffer.from(await response.arrayBuffer());
+
+    // Check actual size
+    if (htmlBuffer.length > maxBytes) {
+      throw new FileTooLargeError(maxBytes);
+    }
+
+    // Compute SHA-256
+    const sha256 = createHash('sha256').update(htmlBuffer).digest('hex');
+
+    // Determine MIME type
+    const mimeType = contentType.split(';')[0].trim();
+    const extension = getExtensionForMimeType(mimeType);
+
+    // Upload to S3
+    const s3Key = `sources/${sourceId}/${sha256}.${extension}`;
+    await putObject(BUCKET, s3Key, htmlBuffer, mimeType);
+
+    const now = new Date().toISOString();
+
+    // Create verification manifest
+    const manifest: VerificationManifest = {
+      sourceId,
+      s3Key,
+      sha256,
+      byteLength: htmlBuffer.length,
+      mimeType,
+      retrievedAt: now,
+      publisher: source.publisher,
+      url: source.url,
+      verifiedAt: now,
+      verificationAlgorithm: 'RSASSA_PSS_SHA_256',
+      verificationKeyId: config.kms.signingKeyId,
+    };
+
+    // Sign the manifest
+    const manifestJson = JSON.stringify(manifest);
+    const { signature, keyId, algorithm } = await signData(
+      Buffer.from(manifestJson)
+    );
+
+    // Store manifest in S3
+    const manifestS3Key = `sources/${sourceId}/manifests/${sha256}.json`;
+    await putObject(BUCKET, manifestS3Key, manifestJson, 'application/json');
+
+    // Update source with verification info
+    const updated: Source = {
+      ...source,
+      sha256,
+      byteLength: htmlBuffer.length,
+      mimeType,
+      s3Key,
+      retrievedAt: now,
+      verificationStatus: 'VERIFIED' as VerificationStatus,
+      verifiedAt: now,
+      verificationManifestS3Key: manifestS3Key,
+      verificationSignature: signature,
+      verificationKeyId: keyId,
+      verificationAlgorithm: algorithm,
+      updatedAt: now,
+      updatedBy: userId,
+    };
+
+    await putItem({
+      TableName: TABLE,
+      Item: {
+        PK: `SOURCE#${sourceId}`,
+        SK: 'META',
+        ...updated,
+      },
+    });
+
+    return updated;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

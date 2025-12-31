@@ -116,6 +116,26 @@ export const auditQuerySchema = paginationSchema.extend({
   endDate: isoTimestampSchema.optional(),
 });
 
+// Intake schemas
+const intakeStatusValues = ['NEW', 'REVIEWED', 'PROMOTED', 'REJECTED'] as const;
+
+export const intakeQuerySchema = paginationSchema.extend({
+  status: z.enum(intakeStatusValues).optional().default('NEW'),
+});
+
+export const intakePromoteSchema = z.object({
+  entityId: idSchema.optional(),
+  createEntity: z.object({
+    name: z.string().min(1).max(500),
+    type: z.nativeEnum(EntityType),
+  }).optional(),
+  tags: z.array(z.string().max(100)).max(20).optional(),
+  cardSummary: z.string().min(1).max(5000),
+}).refine(
+  (data) => data.entityId || data.createEntity,
+  { message: 'Either entityId or createEntity must be provided' }
+);
+
 // Export types
 export type CreateEntityInput = z.infer<typeof createEntitySchema>;
 export type UpdateEntityInput = z.infer<typeof updateEntitySchema>;
@@ -130,3 +150,5 @@ export type CardQueryInput = z.infer<typeof cardQuerySchema>;
 export type EntityQueryInput = z.infer<typeof entityQuerySchema>;
 export type EntityCardsQueryInput = z.infer<typeof entityCardsQuerySchema>;
 export type AuditQueryInput = z.infer<typeof auditQuerySchema>;
+export type IntakeQueryInput = z.infer<typeof intakeQuerySchema>;
+export type IntakePromoteInput = z.infer<typeof intakePromoteSchema>;

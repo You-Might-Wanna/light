@@ -5,7 +5,7 @@ export interface AuditLogEntry {
   logId: string;
   actorUserId: string;
   action: AuditAction;
-  targetType: 'entity' | 'card' | 'source' | 'relationship' | 'config' | 'user';
+  targetType: 'entity' | 'card' | 'source' | 'relationship' | 'config' | 'user' | 'intake';
   targetId: string;
   timestamp: string;
   diff?: Record<string, unknown>;
