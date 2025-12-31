@@ -26,6 +26,11 @@ export class LedgerStack extends cdk.Stack {
     const { environment, domainName } = props;
     const prefix = `ledger-${environment}`;
 
+    // Require domainName for production to ensure CORS is properly configured
+    if (environment === 'prod' && !domainName) {
+      throw new Error('domainName is required for production deployments to configure CORS');
+    }
+
     // Build explicit CORS origins list
     const corsOrigins: string[] = [];
     if (environment === 'dev') {
