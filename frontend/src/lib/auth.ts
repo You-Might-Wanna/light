@@ -43,14 +43,23 @@ export interface NewPasswordRequired {
   userAttributes: Record<string, string>;
 }
 
+export interface MfaSetupRequired {
+  success: false;
+  mfaSetupRequired: true;
+  cognitoUser: CognitoUser;
+  secretCode: string;
+}
+
 export interface AuthError {
   success: false;
   mfaRequired?: false;
   newPasswordRequired?: false;
+  mfaSetupRequired?: false;
   error: string;
 }
 
-export type SignInResult = AuthResult | MfaRequired | NewPasswordRequired | AuthError;
+export type SignInResult = AuthResult | MfaRequired | NewPasswordRequired | MfaSetupRequired | AuthError;
+export type NewPasswordResult = AuthResult | MfaSetupRequired | AuthError;
 
 export async function signIn(
   email: string,
@@ -118,7 +127,7 @@ export async function completeNewPassword(
   cognitoUser: CognitoUser,
   newPassword: string,
   userAttributes: Record<string, string> = {}
-): Promise<AuthResult | AuthError> {
+): Promise<NewPasswordResult> {
   return new Promise((resolve) => {
     cognitoUser.completeNewPasswordChallenge(newPassword, userAttributes, {
       onSuccess: (session) => {
@@ -132,6 +141,48 @@ export async function completeNewPassword(
         resolve({
           success: false,
           error: err.message || 'Failed to set new password',
+        });
+      },
+      mfaSetup: () => {
+        // MFA setup is required - get TOTP secret
+        cognitoUser.associateSoftwareToken({
+          associateSecretCode: (secretCode: string) => {
+            resolve({
+              success: false,
+              mfaSetupRequired: true,
+              cognitoUser,
+              secretCode,
+            });
+          },
+          onFailure: (err) => {
+            resolve({
+              success: false,
+              error: err.message || 'Failed to set up MFA',
+            });
+          },
+        });
+      },
+    });
+  });
+}
+
+export async function verifyMfaSetup(
+  cognitoUser: CognitoUser,
+  totpCode: string
+): Promise<AuthResult | AuthError> {
+  return new Promise((resolve) => {
+    cognitoUser.verifySoftwareToken(totpCode, 'Authenticator', {
+      onSuccess: (session) => {
+        // Set the token in the API client
+        const idToken = session.getIdToken().getJwtToken();
+        api.setToken(idToken);
+
+        resolve({ success: true, session });
+      },
+      onFailure: (err) => {
+        resolve({
+          success: false,
+          error: err.message || 'MFA verification failed',
         });
       },
     });

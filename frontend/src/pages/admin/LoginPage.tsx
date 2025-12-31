@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CognitoUser } from 'amazon-cognito-identity-js';
-import { signIn, verifyMfa, completeNewPassword } from '../../lib/auth';
+import { signIn, verifyMfa, completeNewPassword, verifyMfaSetup } from '../../lib/auth';
 
-type AuthStep = 'credentials' | 'newPassword' | 'mfa';
+type AuthStep = 'credentials' | 'newPassword' | 'mfaSetup' | 'mfa';
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ export default function AdminLoginPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
+  const [totpSecretCode, setTotpSecretCode] = useState('');
   const [step, setStep] = useState<AuthStep>('credentials');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,13 @@ export default function AdminLoginPage() {
         if ('newPasswordRequired' in result && result.newPasswordRequired) {
           setCognitoUser(result.cognitoUser);
           setStep('newPassword');
+          return;
+        }
+
+        if ('mfaSetupRequired' in result && result.mfaSetupRequired) {
+          setCognitoUser(result.cognitoUser);
+          setTotpSecretCode(result.secretCode);
+          setStep('mfaSetup');
           return;
         }
 
@@ -70,6 +78,30 @@ export default function AdminLoginPage() {
           return;
         }
 
+        if ('mfaSetupRequired' in result && result.mfaSetupRequired) {
+          setCognitoUser(result.cognitoUser);
+          setTotpSecretCode(result.secretCode);
+          setStep('mfaSetup');
+          return;
+        }
+
+        if ('error' in result) {
+          setError(result.error);
+        }
+      } else if (step === 'mfaSetup') {
+        if (!cognitoUser) {
+          setError('Session expired. Please sign in again.');
+          handleBack();
+          return;
+        }
+
+        const result = await verifyMfaSetup(cognitoUser, mfaCode);
+
+        if (result.success) {
+          navigate('/admin/dashboard');
+          return;
+        }
+
         setError(result.error);
       } else if (step === 'mfa') {
         if (!cognitoUser) {
@@ -99,6 +131,7 @@ export default function AdminLoginPage() {
     setMfaCode('');
     setNewPassword('');
     setConfirmPassword('');
+    setTotpSecretCode('');
     setCognitoUser(null);
     setError(null);
   }
@@ -110,9 +143,18 @@ export default function AdminLoginPage() {
         return 'Sign In';
       case 'newPassword':
         return 'Set New Password';
+      case 'mfaSetup':
+        return 'Verify & Enable MFA';
       case 'mfa':
         return 'Verify';
     }
+  }
+
+  function getTotpUri() {
+    if (!totpSecretCode || !email) return '';
+    const issuer = encodeURIComponent('AccountabilityLedger');
+    const account = encodeURIComponent(email);
+    return `otpauth://totp/${issuer}:${account}?secret=${totpSecretCode}&issuer=${issuer}`;
   }
 
   return (
@@ -205,6 +247,58 @@ export default function AdminLoginPage() {
                     className="input"
                     minLength={8}
                   />
+                </div>
+              </>
+            )}
+
+            {step === 'mfaSetup' && (
+              <>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                  <p className="text-sm text-blue-800">
+                    Set up two-factor authentication to secure your account.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      1. Scan this QR code with your authenticator app:
+                    </p>
+                    <div className="flex justify-center p-4 bg-white rounded-lg border">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getTotpUri())}`}
+                        alt="TOTP QR Code"
+                        className="w-48 h-48"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Or enter this code manually:
+                    </p>
+                    <code className="block p-3 bg-gray-100 rounded text-sm font-mono break-all text-center">
+                      {totpSecretCode}
+                    </code>
+                  </div>
+
+                  <div>
+                    <label htmlFor="mfaCode" className="label">
+                      2. Enter the 6-digit code from your app:
+                    </label>
+                    <input
+                      id="mfaCode"
+                      type="text"
+                      required
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      className="input"
+                      placeholder="000000"
+                      autoComplete="one-time-code"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                    />
+                  </div>
                 </div>
               </>
             )}
