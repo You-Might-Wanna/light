@@ -474,9 +474,11 @@ export async function handler(
   const requestId = event.requestContext.requestId;
   const logger = createRequestLogger(requestId);
   const method = event.requestContext.http.method;
-  const path = event.rawPath;
+  // Strip /api prefix if present (CloudFront forwards /api/* to API Gateway)
+  const rawPath = event.rawPath;
+  const path = rawPath.startsWith('/api') ? rawPath.slice(4) || '/' : rawPath;
 
-  logger.info({ method, path }, 'Request received');
+  logger.info({ method, path, rawPath }, 'Request received');
 
   try {
     // Check read-only mode for writes

@@ -156,6 +156,27 @@ jobs:
             --output text)
           echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
 
+      - name: Get Cognito Config
+        id: cognito
+        working-directory: infra/cdk
+        run: |
+          USER_POOL_ID=$(aws cloudformation describe-stacks \
+            --stack-name LedgerProdStack \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
+            --output text)
+          CLIENT_ID=$(aws cloudformation describe-stacks \
+            --stack-name LedgerProdStack \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" \
+            --output text)
+          echo "user_pool_id=$USER_POOL_ID" >> $GITHUB_OUTPUT
+          echo "client_id=$CLIENT_ID" >> $GITHUB_OUTPUT
+
+      - name: Rebuild Frontend with Cognito Config
+        run: npm run build -w @ledger/frontend
+        env:
+          VITE_COGNITO_USER_POOL_ID: ${{ steps.cognito.outputs.user_pool_id }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.cognito.outputs.client_id }}
+
       - name: Deploy Frontend to S3
         run: |
           aws s3 sync frontend/dist/ s3://${{ steps.s3.outputs.bucket }}/ \

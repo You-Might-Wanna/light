@@ -16,6 +16,8 @@ import {
   getObjectMetadata,
   getObjectStream,
   putObject,
+  copyObject,
+  deleteObject,
 } from '../s3.js';
 import { signData } from '../kms.js';
 import {
@@ -160,21 +162,21 @@ export async function finalizeSource(
 ): Promise<Source> {
   const source = await getSource(sourceId);
 
-  // Find the uploaded file
-  const s3Key = `sources/${sourceId}/upload.pdf`; // Try PDF first
-  let metadata = await getObjectMetadata(BUCKET, s3Key);
+  // Find the uploaded file - try all supported extensions
+  const extensions = ['pdf', 'html', 'png', 'jpeg', 'jpg', 'gif', 'webp'];
+  let uploadKey: string | null = null;
+  let metadata: { contentLength: number; contentType: string; eTag: string } | null = null;
 
-  // Try other extensions if PDF not found
-  if (!metadata) {
-    const extensions = ['html', 'png', 'jpeg', 'jpg', 'gif', 'webp'];
-    for (const ext of extensions) {
-      const tryKey = `sources/${sourceId}/upload.${ext}`;
-      metadata = await getObjectMetadata(BUCKET, tryKey);
-      if (metadata) break;
+  for (const ext of extensions) {
+    const tryKey = `sources/${sourceId}/upload.${ext}`;
+    metadata = await getObjectMetadata(BUCKET, tryKey);
+    if (metadata) {
+      uploadKey = tryKey;
+      break;
     }
   }
 
-  if (!metadata) {
+  if (!metadata || !uploadKey) {
     throw new NotFoundError('Uploaded file', sourceId);
   }
 
@@ -183,8 +185,8 @@ export async function finalizeSource(
     throw new FileTooLargeError(50 * 1024 * 1024);
   }
 
-  // Compute SHA-256
-  const stream = await getObjectStream(BUCKET, s3Key);
+  // Compute SHA-256 from the actual upload key
+  const stream = await getObjectStream(BUCKET, uploadKey);
   if (!stream) {
     throw new NotFoundError('Uploaded file stream', sourceId);
   }
@@ -201,9 +203,15 @@ export async function finalizeSource(
 
   const sha256 = hash.digest('hex');
 
-  // Rename to final key with hash
+  // Determine final key with hash
   const extension = getExtensionForMimeType(metadata.contentType);
   const finalS3Key = `sources/${sourceId}/${sha256}.${extension}`;
+
+  // Copy uploaded file to final hash-based key
+  await copyObject(BUCKET, uploadKey, finalS3Key);
+
+  // Delete the temporary upload file
+  await deleteObject(BUCKET, uploadKey);
 
   // Create verification manifest
   const now = new Date().toISOString();

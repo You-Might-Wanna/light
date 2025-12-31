@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { CognitoUser } from 'amazon-cognito-identity-js';
+import { signIn, verifyMfa } from '../../lib/auth';
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
@@ -9,6 +11,7 @@ export default function AdminLoginPage() {
   const [showMfa, setShowMfa] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cognitoUser, setCognitoUser] = useState<CognitoUser | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -16,30 +19,51 @@ export default function AdminLoginPage() {
     setError(null);
 
     try {
-      // TODO: Implement Cognito authentication
-      // For now, this is a placeholder that simulates the auth flow
-
       if (!showMfa) {
-        // Simulate initial auth - would normally call Cognito
-        setShowMfa(true);
-        setLoading(false);
-        return;
+        // Initial sign-in
+        const result = await signIn(email, password);
+
+        if (result.success) {
+          navigate('/admin/dashboard');
+          return;
+        }
+
+        if ('mfaRequired' in result && result.mfaRequired) {
+          setCognitoUser(result.cognitoUser);
+          setShowMfa(true);
+          return;
+        }
+
+        setError(result.error);
+      } else {
+        // MFA verification
+        if (!cognitoUser) {
+          setError('Session expired. Please sign in again.');
+          setShowMfa(false);
+          return;
+        }
+
+        const result = await verifyMfa(cognitoUser, mfaCode);
+
+        if (result.success) {
+          navigate('/admin/dashboard');
+          return;
+        }
+
+        setError(result.error);
       }
-
-      // Simulate MFA verification
-      // In production, this would verify with Cognito and get JWT tokens
-      console.log('Auth:', { email, mfaCode });
-
-      // Store token (placeholder)
-      localStorage.setItem('admin_auth', 'placeholder_token');
-
-      // Redirect to dashboard
-      navigate('/admin/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed');
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleBack() {
+    setShowMfa(false);
+    setMfaCode('');
+    setCognitoUser(null);
+    setError(null);
   }
 
   return (
@@ -125,7 +149,7 @@ export default function AdminLoginPage() {
             {showMfa && (
               <button
                 type="button"
-                onClick={() => setShowMfa(false)}
+                onClick={handleBack}
                 className="btn-secondary w-full"
               >
                 Back

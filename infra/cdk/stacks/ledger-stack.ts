@@ -23,8 +23,24 @@ export class LedgerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: LedgerStackProps) {
     super(scope, id, props);
 
-    const { environment } = props;
+    const { environment, domainName } = props;
     const prefix = `ledger-${environment}`;
+
+    // Build explicit CORS origins list
+    const corsOrigins: string[] = [];
+    if (environment === 'dev') {
+      corsOrigins.push('http://localhost:5173'); // Vite dev server
+      corsOrigins.push('http://localhost:3000'); // Alternative dev port
+    }
+    if (domainName) {
+      // Support both www and non-www variants
+      corsOrigins.push(`https://${domainName}`);
+      if (domainName.startsWith('www.')) {
+        corsOrigins.push(`https://${domainName.slice(4)}`);
+      } else {
+        corsOrigins.push(`https://www.${domainName}`);
+      }
+    }
 
     // ============================================================
     // KMS Key for signing verification manifests
@@ -98,14 +114,16 @@ export class LedgerStack extends cdk.Stack {
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: environment !== 'prod',
-      cors: [
-        {
-          allowedMethods: [s3.HttpMethods.PUT],
-          allowedOrigins: ['*'], // Will be restricted in production
-          allowedHeaders: ['*'],
-          maxAge: 3600,
-        },
-      ],
+      cors: corsOrigins.length > 0
+        ? [
+            {
+              allowedMethods: [s3.HttpMethods.PUT],
+              allowedOrigins: corsOrigins,
+              allowedHeaders: ['*'],
+              maxAge: 3600,
+            },
+          ]
+        : undefined,
     });
 
     // Public site bucket (static hosting)
@@ -316,24 +334,24 @@ export class LedgerStack extends cdk.Stack {
     // ============================================================
     const httpApi = new apigateway.HttpApi(this, 'HttpApi', {
       apiName: `${prefix}-api`,
-      corsPreflight: {
-        allowOrigins: environment === 'prod'
-          ? ['https://*'] // Will be restricted in production
-          : ['*'],
-        allowMethods: [
-          apigateway.CorsHttpMethod.GET,
-          apigateway.CorsHttpMethod.POST,
-          apigateway.CorsHttpMethod.PUT,
-          apigateway.CorsHttpMethod.OPTIONS,
-        ],
-        allowHeaders: [
-          'Content-Type',
-          'Authorization',
-          'Idempotency-Key',
-          'X-Request-Id',
-        ],
-        maxAge: cdk.Duration.minutes(10),
-      },
+      corsPreflight: corsOrigins.length > 0
+        ? {
+            allowOrigins: corsOrigins,
+            allowMethods: [
+              apigateway.CorsHttpMethod.GET,
+              apigateway.CorsHttpMethod.POST,
+              apigateway.CorsHttpMethod.PUT,
+              apigateway.CorsHttpMethod.OPTIONS,
+            ],
+            allowHeaders: [
+              'Content-Type',
+              'Authorization',
+              'Idempotency-Key',
+              'X-Request-Id',
+            ],
+            maxAge: cdk.Duration.minutes(10),
+          }
+        : undefined,
     });
 
     // JWT Authorizer for admin routes
