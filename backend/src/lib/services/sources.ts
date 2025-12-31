@@ -24,7 +24,9 @@ import {
   NotFoundError,
   FileTooLargeError,
   InvalidMimeTypeError,
+  SourceNotPublicError,
 } from '../errors.js';
+import { isSourceReferencedByPublishedCard } from './cards.js';
 import type { CreateSourceInput, UpdateSourceInput } from '../validation.js';
 
 const TABLE = config.tables.sources;
@@ -275,6 +277,17 @@ export async function generateDownloadUrl(
 
   if (!source.s3Key) {
     throw new NotFoundError('Source file', sourceId);
+  }
+
+  // Security: Only allow downloads for verified sources referenced by published cards
+  // This prevents ID-guessing attacks and leakage of unpublished/unverified content
+  if (source.verificationStatus !== 'VERIFIED') {
+    throw new SourceNotPublicError(sourceId);
+  }
+
+  const isPublished = await isSourceReferencedByPublishedCard(sourceId);
+  if (!isPublished) {
+    throw new SourceNotPublicError(sourceId);
   }
 
   const downloadUrl = await getPresignedDownloadUrl(

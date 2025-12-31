@@ -122,9 +122,19 @@ export class LedgerStack extends cdk.Stack {
       cors: corsOrigins.length > 0
         ? [
             {
-              allowedMethods: [s3.HttpMethods.PUT],
+              allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.HEAD],
               allowedOrigins: corsOrigins,
-              allowedHeaders: ['*'],
+              // Explicit headers required for presigned uploads
+              allowedHeaders: [
+                'Content-Type',
+                'Content-Length',
+                'Content-MD5',
+                'x-amz-content-sha256',
+                'x-amz-date',
+                'x-amz-security-token',
+                'Authorization',
+              ],
+              exposedHeaders: ['ETag'],
               maxAge: 3600,
             },
           ]
@@ -265,6 +275,13 @@ export class LedgerStack extends cdk.Stack {
       removalPolicy: environment === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Admin group - users must be in this group to access /admin/* routes
+    new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
+      userPoolId: userPool.userPoolId,
+      groupName: 'admin',
+      description: 'Administrators with full access to admin API endpoints',
     });
 
     const userPoolClient = userPool.addClient('WebClient', {
@@ -504,6 +521,63 @@ export class LedgerStack extends cdk.Stack {
     });
 
     // ============================================================
+    // CloudFront Security Headers Policy
+    // ============================================================
+    const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
+      responseHeadersPolicyName: `${prefix}-security-headers`,
+      securityHeadersBehavior: {
+        contentSecurityPolicy: {
+          // CSP for static SPA + same-origin API
+          contentSecurityPolicy: [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'", // Often needed for CSS-in-JS
+            "img-src 'self' data: https:",
+            "font-src 'self' data:",
+            "connect-src 'self'",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "frame-ancestors 'none'",
+            "form-action 'self'",
+            "upgrade-insecure-requests",
+          ].join('; '),
+          override: true,
+        },
+        strictTransportSecurity: {
+          accessControlMaxAge: cdk.Duration.days(365),
+          includeSubdomains: true,
+          preload: true,
+          override: true,
+        },
+        contentTypeOptions: {
+          override: true,
+        },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+        frameOptions: {
+          frameOption: cloudfront.HeadersFrameOption.DENY,
+          override: true,
+        },
+        xssProtection: {
+          protection: true,
+          modeBlock: true,
+          override: true,
+        },
+      },
+      customHeadersBehavior: {
+        customHeaders: [
+          {
+            header: 'Permissions-Policy',
+            value: 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()',
+            override: true,
+          },
+        ],
+      },
+    });
+
+    // ============================================================
     // CloudFront Distribution
     // ============================================================
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
@@ -512,6 +586,7 @@ export class LedgerStack extends cdk.Stack {
         origin: cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(siteBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        responseHeadersPolicy: securityHeadersPolicy,
       },
       additionalBehaviors: {
         '/api/*': {
@@ -522,6 +597,7 @@ export class LedgerStack extends cdk.Stack {
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          responseHeadersPolicy: securityHeadersPolicy,
         },
       },
       defaultRootObject: 'index.html',

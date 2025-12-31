@@ -67,9 +67,6 @@ export async function signIn(
         const idToken = session.getIdToken().getJwtToken();
         api.setToken(idToken);
 
-        // Store session
-        localStorage.setItem('admin_auth', 'authenticated');
-
         resolve({ success: true, session });
       },
       onFailure: (err) => {
@@ -110,9 +107,6 @@ export async function verifyMfa(
           const idToken = session.getIdToken().getJwtToken();
           api.setToken(idToken);
 
-          // Store session
-          localStorage.setItem('admin_auth', 'authenticated');
-
           resolve({ success: true, session });
         },
         onFailure: (err) => {
@@ -136,7 +130,6 @@ export function signOut(): void {
   }
 
   api.setToken(null);
-  localStorage.removeItem('admin_auth');
 }
 
 export async function getCurrentSession(): Promise<CognitoUserSession | null> {
@@ -166,8 +159,4 @@ export async function getCurrentSession(): Promise<CognitoUserSession | null> {
 export async function isAuthenticated(): Promise<boolean> {
   const session = await getCurrentSession();
   return session !== null && session.isValid();
-}
-
-export function getStoredAuth(): boolean {
-  return localStorage.getItem('admin_auth') === 'authenticated';
 }

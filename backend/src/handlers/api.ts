@@ -105,14 +105,46 @@ async function checkReadOnly(method: string): Promise<void> {
   }
 }
 
-// Extract user ID from JWT claims
-function getUserIdFromEvent(event: APIGatewayProxyEventV2): string | undefined {
+// Extract user info from JWT claims
+interface JwtUserInfo {
+  userId: string | undefined;
+  groups: string[];
+}
+
+function getUserInfoFromEvent(event: APIGatewayProxyEventV2): JwtUserInfo {
   // Type assertion needed for JWT authorizer claims - requestContext type varies by authorizer configuration
   const requestContext = event.requestContext as unknown as {
     authorizer?: { jwt?: { claims?: Record<string, unknown> } }
   };
   const claims = requestContext.authorizer?.jwt?.claims;
-  return claims?.sub as string | undefined;
+
+  // Cognito groups come as a JSON-encoded array string in the 'cognito:groups' claim
+  let groups: string[] = [];
+  const groupsClaim = claims?.['cognito:groups'];
+  if (Array.isArray(groupsClaim)) {
+    groups = groupsClaim as string[];
+  } else if (typeof groupsClaim === 'string') {
+    // Sometimes it's a JSON string array
+    try {
+      const parsed = JSON.parse(groupsClaim);
+      if (Array.isArray(parsed)) {
+        groups = parsed;
+      }
+    } catch {
+      // Not JSON, might be comma-separated
+      groups = groupsClaim.split(',').map(g => g.trim()).filter(Boolean);
+    }
+  }
+
+  return {
+    userId: claims?.sub as string | undefined,
+    groups,
+  };
+}
+
+// Check if user has admin group membership
+function isUserAdmin(groups: string[]): boolean {
+  return groups.includes('admin');
 }
 
 // Route definitions
@@ -502,23 +534,38 @@ export async function handler(
 
     // Check admin requirement
     const isAdminRoute = requiresAdmin(method, path);
-    const userId = getUserIdFromEvent(event);
+    const { userId, groups } = getUserInfoFromEvent(event);
 
-    if (isAdminRoute && !userId) {
-      return jsonResponse(401, {
-        error: {
-          code: 'UNAUTHORIZED',
-          message: 'Authentication required',
-          requestId,
-        },
-      });
+    if (isAdminRoute) {
+      // Must have a valid JWT
+      if (!userId) {
+        return jsonResponse(401, {
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication required',
+            requestId,
+          },
+        });
+      }
+
+      // Must be in the admin group - having a valid JWT is not enough
+      if (!isUserAdmin(groups)) {
+        logger.warn({ userId, groups }, 'User attempted admin access without admin group');
+        return jsonResponse(403, {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Admin group membership required',
+            requestId,
+          },
+        });
+      }
     }
 
     const handlerContext: HandlerContext = {
       requestId,
       logger,
       userId,
-      isAdmin: !!userId,
+      isAdmin: isUserAdmin(groups),
     };
 
     // Execute handler

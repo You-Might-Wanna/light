@@ -114,9 +114,11 @@ export async function copyObject(
   sourceKey: string,
   destKey: string
 ): Promise<void> {
+  // URL-encode CopySource to handle special characters in keys safely
+  const encodedSource = encodeURIComponent(`${bucket}/${sourceKey}`);
   const command = new CopyObjectCommand({
     Bucket: bucket,
-    CopySource: `${bucket}/${sourceKey}`,
+    CopySource: encodedSource,
     Key: destKey,
   });
   await s3Client.send(command);

@@ -130,3 +130,14 @@ export class ReadOnlyModeError extends AppError {
     this.name = 'ReadOnlyModeError';
   }
 }
+
+export class SourceNotPublicError extends AppError {
+  constructor(sourceId: string) {
+    super(
+      ErrorCode.FORBIDDEN,
+      `Source not available for public download: ${sourceId}`,
+      403
+    );
+    this.name = 'SourceNotPublicError';
+  }
+}

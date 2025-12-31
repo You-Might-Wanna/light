@@ -419,3 +419,42 @@ export async function listEntityCards(
     hasMore: !!lastEvaluatedKey,
   };
 }
+
+/**
+ * Check if a source is referenced by at least one published card.
+ * Used to gate public source downloads - sources should only be downloadable
+ * if they're backing a published claim.
+ *
+ * Note: This queries published cards by month partitions in GSI1. For sources
+ * referenced by cards published more than 2 months ago, this will require
+ * querying additional partitions. Consider adding a SOURCE#<id> -> CARD#<id>
+ * denormalized index for better scalability.
+ */
+export async function isSourceReferencedByPublishedCard(sourceId: string): Promise<boolean> {
+  // Query published cards using GSI1 and filter for ones referencing this source
+  // Check last 12 months of published cards to handle older publications
+  const now = new Date();
+
+  for (let monthsBack = 0; monthsBack < 12; monthsBack++) {
+    const checkDate = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
+    const yearMonth = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const { items } = await queryItems<EvidenceCard & { PK: string; SK: string }>({
+      TableName: TABLE,
+      IndexName: 'GSI1',
+      KeyConditionExpression: 'GSI1PK = :pk',
+      FilterExpression: 'contains(sourceRefs, :sourceId)',
+      ExpressionAttributeValues: {
+        ':pk': `STATUS#PUBLISHED#${yearMonth}`,
+        ':sourceId': sourceId,
+      },
+      Limit: 1, // We only need to know if at least one exists
+    });
+
+    if (items.length > 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
