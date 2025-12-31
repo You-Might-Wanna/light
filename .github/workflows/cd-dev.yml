@@ -31,6 +31,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build backend and shared
+        run: |
+          npm run build -w @ledger/shared
+          npm run build -w @ledger/backend
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
@@ -52,7 +57,7 @@ jobs:
           echo "api_url=$API_URL" >> $GITHUB_OUTPUT
 
       - name: Build Frontend
-        run: npm run build
+        run: npm run build -w @ledger/frontend
         env:
           VITE_COGNITO_USER_POOL_ID: ${{ steps.cognito-outputs.outputs.user_pool_id }}
           VITE_COGNITO_CLIENT_ID: ${{ steps.cognito-outputs.outputs.user_pool_client_id }}
