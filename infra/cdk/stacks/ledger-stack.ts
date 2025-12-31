@@ -595,7 +595,7 @@ export class LedgerStack extends cdk.Stack {
             "style-src 'self' 'unsafe-inline'", // Often needed for CSS-in-JS
             "img-src 'self' data: https:",
             "font-src 'self' data:",
-            "connect-src 'self'",
+            "connect-src 'self' https://cognito-idp.us-east-1.amazonaws.com",
             "object-src 'none'",
             "base-uri 'self'",
             "frame-ancestors 'none'",
