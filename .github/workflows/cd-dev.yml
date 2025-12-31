@@ -31,9 +31,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build all packages
-        run: npm run build
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
@@ -43,6 +40,23 @@ jobs:
       - name: Deploy CDK Stack
         working-directory: infra/cdk
         run: npx cdk deploy LedgerDevStack --require-approval never
+
+      - name: Get Cognito Outputs
+        id: cognito-outputs
+        run: |
+          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name LedgerDevStack --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
+          USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name LedgerDevStack --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text)
+          API_URL=$(aws cloudformation describe-stacks --stack-name LedgerDevStack --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          echo "user_pool_id=$USER_POOL_ID" >> $GITHUB_OUTPUT
+          echo "user_pool_client_id=$USER_POOL_CLIENT_ID" >> $GITHUB_OUTPUT
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+
+      - name: Build Frontend
+        run: npm run build
+        env:
+          VITE_COGNITO_USER_POOL_ID: ${{ steps.cognito-outputs.outputs.user_pool_id }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.cognito-outputs.outputs.user_pool_client_id }}
+          VITE_API_URL: ${{ steps.cognito-outputs.outputs.api_url }}
 
       - name: Get Stack Outputs
         id: stack-outputs
