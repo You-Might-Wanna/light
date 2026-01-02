@@ -119,6 +119,25 @@ export async function signIn(
           cognitoUser,
         });
       },
+      mfaSetup: () => {
+        // MFA setup is required - get TOTP secret
+        cognitoUser.associateSoftwareToken({
+          associateSecretCode: (secretCode: string) => {
+            resolve({
+              success: false,
+              mfaSetupRequired: true,
+              cognitoUser,
+              secretCode,
+            });
+          },
+          onFailure: (err) => {
+            resolve({
+              success: false,
+              error: err.message || 'Failed to set up MFA',
+            });
+          },
+        });
+      },
     });
   });
 }
