@@ -187,7 +187,32 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'");
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/**
+ * Strip HTML tags and convert to plain text
+ */
+function stripHtml(html: string): string {
+  return html
+    // Remove HTML tags
+    .replace(/<[^>]*>/g, ' ')
+    // Collapse multiple spaces
+    .replace(/\s+/g, ' ')
+    // Decode HTML entities
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .trim();
 }
 
 // ============================================================
@@ -341,7 +366,7 @@ export async function processFeed(
           title: rssItem.title,
           publishedAt,
           publisher: feed.publisher,
-          summary: rssItem.description,
+          summary: rssItem.description ? stripHtml(rssItem.description) : undefined,
           categories: rssItem.categories,
           guid: rssItem.guid,
           dedupeKey,
