@@ -365,6 +365,7 @@ export class LedgerStack extends cdk.Stack {
         SOURCES_TABLE: sourcesTable.tableName,
         AUDIT_TABLE: auditTable.tableName,
         IDEMPOTENCY_TABLE: idempotencyTable.tableName,
+        INTAKE_TABLE: intakeTable.tableName,
         SOURCES_BUCKET: sourcesBucket.bucketName,
         KMS_SIGNING_KEY_ID: signingKey.keyId,
         LOG_LEVEL: environment === 'prod' ? 'info' : 'debug',
