@@ -134,3 +134,22 @@ export interface RelationshipQueryParams {
   limit?: number;
   cursor?: string;
 }
+
+// Ownership tree types for graph visualization
+export interface OwnershipNode {
+  entityId: string;
+  name: string;
+  type: string;
+  children?: OwnershipNode[];
+  parents?: OwnershipNode[];
+  relationship?: {
+    relationshipId: string;
+    type: RelationshipType;
+    ownershipPercentage?: number;
+  };
+}
+
+export interface OwnershipTreeResponse {
+  root: OwnershipNode;
+  maxDepthReached: boolean;
+}

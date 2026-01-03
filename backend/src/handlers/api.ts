@@ -38,6 +38,8 @@ import {
   updateRelationshipSchema,
   retractRelationshipSchema,
   relationshipQuerySchema,
+  ownershipTreeQuerySchema,
+  addAliasSchema,
 } from '../lib/validation.js';
 
 // Route handler type
@@ -762,6 +764,55 @@ const routes: Record<string, Record<string, RouteHandler>> = {
       // Only return published relationships
       const relationships = await relationshipService.getPublicRelationshipsForEntity(entityId);
       return jsonResponse(200, { items: relationships });
+    },
+  },
+  'GET /relationships/{relationshipId}': {
+    handler: async (event, _ctx) => {
+      const relationshipId = getPathParam(event, 'relationshipId');
+      // Only return if published
+      const relationship = await relationshipService.getPublicRelationship(relationshipId);
+      return jsonResponse(200, relationship);
+    },
+  },
+  'GET /entities/{entityId}/ownership-tree': {
+    handler: async (event, _ctx) => {
+      const entityId = getPathParam(event, 'entityId');
+      const query = ownershipTreeQuerySchema.parse(getQueryParams(event));
+      const result = await relationshipService.getOwnershipTree(
+        entityId,
+        query.direction,
+        query.maxDepth
+      );
+      return jsonResponse(200, result);
+    },
+  },
+
+  // Admin: Entity Aliases
+  'POST /admin/entities/{entityId}/aliases': {
+    handler: async (event, ctx) => {
+      const entityId = getPathParam(event, 'entityId');
+      const input = addAliasSchema.parse(parseBody(event));
+      const entity = await entityService.getEntity(entityId);
+
+      // Add alias if not already present
+      const existingAliases = entity.aliases || [];
+      if (!existingAliases.includes(input.alias)) {
+        const updatedEntity = await entityService.updateEntity(
+          entityId,
+          { aliases: [...existingAliases, input.alias] },
+          ctx.userId!
+        );
+        await auditService.logAuditEvent(
+          'UPDATE_ENTITY',
+          'entity',
+          entityId,
+          ctx.userId!,
+          { metadata: { addedAlias: input.alias }, requestId: ctx.requestId }
+        );
+        return jsonResponse(200, updatedEntity);
+      }
+
+      return jsonResponse(200, entity);
     },
   },
 };

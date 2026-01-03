@@ -8,6 +8,7 @@ import type {
   RelationshipWithEntities,
   RelationshipQueryParams,
   PaginatedResponse,
+  OwnershipNode,
 } from '@ledger/shared';
 import { config } from '../config.js';
 import {
@@ -452,4 +453,164 @@ export async function getPublicRelationshipsForEntity(
   entityId: string
 ): Promise<RelationshipWithEntities[]> {
   return getRelationshipsForEntity(entityId, 'PUBLISHED');
+}
+
+/**
+ * Get a public relationship by ID (must be PUBLISHED)
+ */
+export async function getPublicRelationship(
+  relationshipId: string
+): Promise<RelationshipWithEntities> {
+  const relationship = await getRelationship(relationshipId);
+
+  if (relationship.status !== 'PUBLISHED') {
+    throw new NotFoundError('Relationship', relationshipId);
+  }
+
+  // Hydrate with entity details
+  const [fromEntity, toEntity] = await Promise.all([
+    getEntity(relationship.fromEntityId).catch(() => ({
+      entityId: relationship.fromEntityId,
+      name: '[Unknown Entity]',
+      type: 'UNKNOWN',
+    })),
+    getEntity(relationship.toEntityId).catch(() => ({
+      entityId: relationship.toEntityId,
+      name: '[Unknown Entity]',
+      type: 'UNKNOWN',
+    })),
+  ]);
+
+  return {
+    ...relationship,
+    fromEntity: {
+      entityId: fromEntity.entityId,
+      name: fromEntity.name,
+      type: fromEntity.type,
+    },
+    toEntity: {
+      entityId: toEntity.entityId,
+      name: toEntity.name,
+      type: toEntity.type,
+    },
+  };
+}
+
+/**
+ * Build ownership tree for an entity
+ * Traverses OWNS/CONTROLS/SUBSIDIARY_OF relationships up to maxDepth
+ */
+export async function getOwnershipTree(
+  entityId: string,
+  direction: 'up' | 'down' | 'both',
+  maxDepth: number = 6
+): Promise<{ root: OwnershipNode; maxDepthReached: boolean }> {
+  const ownershipTypes: RelationshipType[] = ['OWNS', 'CONTROLS', 'SUBSIDIARY_OF', 'PARENT_OF'];
+  let maxDepthReached = false;
+
+  // Get the root entity
+  const rootEntity = await getEntity(entityId);
+  const visited = new Set<string>();
+
+  async function buildNode(
+    entId: string,
+    depth: number,
+    dir: 'up' | 'down'
+  ): Promise<OwnershipNode> {
+    if (depth >= maxDepth) {
+      maxDepthReached = true;
+      const entity = await getEntity(entId).catch(() => ({
+        entityId: entId,
+        name: '[Unknown Entity]',
+        type: 'UNKNOWN',
+      }));
+      return {
+        entityId: entId,
+        name: entity.name,
+        type: entity.type,
+      };
+    }
+
+    if (visited.has(`${entId}-${dir}`)) {
+      // Prevent cycles
+      const entity = await getEntity(entId).catch(() => ({
+        entityId: entId,
+        name: '[Unknown Entity]',
+        type: 'UNKNOWN',
+      }));
+      return {
+        entityId: entId,
+        name: entity.name,
+        type: entity.type,
+      };
+    }
+    visited.add(`${entId}-${dir}`);
+
+    const entity = await getEntity(entId).catch(() => ({
+      entityId: entId,
+      name: '[Unknown Entity]',
+      type: 'UNKNOWN',
+    }));
+
+    const relationships = await getRelationshipsForEntity(entId, 'PUBLISHED');
+    const ownershipRels = relationships.filter((r) => ownershipTypes.includes(r.type));
+
+    const node: OwnershipNode = {
+      entityId: entId,
+      name: entity.name,
+      type: entity.type,
+    };
+
+    if (dir === 'up' || dir === 'down') {
+      // For 'up': find entities that own this entity (this entity is the toEntity)
+      // For 'down': find entities owned by this entity (this entity is the fromEntity)
+      const relevantRels = ownershipRels.filter((r) =>
+        dir === 'up' ? r.toEntityId === entId : r.fromEntityId === entId
+      );
+
+      if (relevantRels.length > 0) {
+        const childNodes = await Promise.all(
+          relevantRels.map(async (rel) => {
+            const nextEntityId = dir === 'up' ? rel.fromEntityId : rel.toEntityId;
+            const childNode = await buildNode(nextEntityId, depth + 1, dir);
+            return {
+              ...childNode,
+              relationship: {
+                relationshipId: rel.relationshipId,
+                type: rel.type,
+                ownershipPercentage: rel.ownershipPercentage,
+              },
+            };
+          })
+        );
+
+        if (dir === 'up') {
+          node.parents = childNodes;
+        } else {
+          node.children = childNodes;
+        }
+      }
+    }
+
+    return node;
+  }
+
+  // Build the tree based on direction
+  const root: OwnershipNode = {
+    entityId: rootEntity.entityId,
+    name: rootEntity.name,
+    type: rootEntity.type,
+  };
+
+  if (direction === 'up' || direction === 'both') {
+    const upTree = await buildNode(entityId, 0, 'up');
+    root.parents = upTree.parents;
+  }
+
+  if (direction === 'down' || direction === 'both') {
+    const downTree = await buildNode(entityId, 0, 'down');
+    root.children = downTree.children;
+  }
+
+  return { root, maxDepthReached };
 }

@@ -175,6 +175,15 @@ export const relationshipQuerySchema = paginationSchema.extend({
   status: z.enum(relationshipStatusValues).optional(),
 });
 
+export const ownershipTreeQuerySchema = z.object({
+  direction: z.enum(['up', 'down', 'both']).optional().default('both'),
+  maxDepth: z.coerce.number().min(1).max(10).optional().default(6),
+});
+
+export const addAliasSchema = z.object({
+  alias: z.string().min(1).max(500),
+});
+
 // Export types
 export type CreateEntityInput = z.infer<typeof createEntitySchema>;
 export type UpdateEntityInput = z.infer<typeof updateEntitySchema>;
@@ -195,3 +204,5 @@ export type CreateRelationshipInput = z.infer<typeof createRelationshipSchema>;
 export type UpdateRelationshipInput = z.infer<typeof updateRelationshipSchema>;
 export type RetractRelationshipInput = z.infer<typeof retractRelationshipSchema>;
 export type RelationshipQueryInput = z.infer<typeof relationshipQuerySchema>;
+export type OwnershipTreeQueryInput = z.infer<typeof ownershipTreeQuerySchema>;
+export type AddAliasInput = z.infer<typeof addAliasSchema>;
