@@ -16,6 +16,7 @@ import * as sourceService from '../lib/services/sources.js';
 import * as cardService from '../lib/services/cards.js';
 import * as auditService from '../lib/services/audit.js';
 import * as intakeService from '../lib/services/intake.js';
+import * as relationshipService from '../lib/services/relationships.js';
 
 // Validation schemas
 import {
@@ -33,6 +34,10 @@ import {
   auditQuerySchema,
   intakeQuerySchema,
   intakePromoteSchema,
+  createRelationshipSchema,
+  updateRelationshipSchema,
+  retractRelationshipSchema,
+  relationshipQuerySchema,
 } from '../lib/validation.js';
 
 // Route handler type
@@ -673,6 +678,90 @@ const routes: Record<string, Record<string, RouteHandler>> = {
         sourceId: source.sourceId,
         cardId: card.cardId,
       });
+    },
+  },
+
+  // Admin: Relationships
+  'GET /admin/relationships': {
+    handler: async (event, _ctx) => {
+      const query = relationshipQuerySchema.parse(getQueryParams(event));
+      const result = await relationshipService.listRelationships(query);
+      return jsonResponse(200, result);
+    },
+  },
+  'GET /admin/relationships/{relationshipId}': {
+    handler: async (event, _ctx) => {
+      const relationshipId = getPathParam(event, 'relationshipId');
+      const relationship = await relationshipService.getRelationship(relationshipId);
+      return jsonResponse(200, relationship);
+    },
+  },
+  'POST /admin/relationships': {
+    handler: async (event, ctx) => {
+      const input = createRelationshipSchema.parse(parseBody(event));
+      const relationship = await relationshipService.createRelationship(input, ctx.userId!);
+      await auditService.logAuditEvent(
+        'CREATE_RELATIONSHIP',
+        'relationship',
+        relationship.relationshipId,
+        ctx.userId!,
+        { requestId: ctx.requestId }
+      );
+      return jsonResponse(201, relationship);
+    },
+  },
+  'PUT /admin/relationships/{relationshipId}': {
+    handler: async (event, ctx) => {
+      const relationshipId = getPathParam(event, 'relationshipId');
+      const input = updateRelationshipSchema.parse(parseBody(event));
+      const relationship = await relationshipService.updateRelationship(relationshipId, input, ctx.userId!);
+      await auditService.logAuditEvent(
+        'UPDATE_RELATIONSHIP',
+        'relationship',
+        relationship.relationshipId,
+        ctx.userId!,
+        { diff: input, requestId: ctx.requestId }
+      );
+      return jsonResponse(200, relationship);
+    },
+  },
+  'POST /admin/relationships/{relationshipId}/publish': {
+    handler: async (event, ctx) => {
+      const relationshipId = getPathParam(event, 'relationshipId');
+      const relationship = await relationshipService.publishRelationship(relationshipId, ctx.userId!);
+      await auditService.logAuditEvent(
+        'PUBLISH_RELATIONSHIP',
+        'relationship',
+        relationship.relationshipId,
+        ctx.userId!,
+        { requestId: ctx.requestId }
+      );
+      return jsonResponse(200, relationship);
+    },
+  },
+  'POST /admin/relationships/{relationshipId}/retract': {
+    handler: async (event, ctx) => {
+      const relationshipId = getPathParam(event, 'relationshipId');
+      const input = retractRelationshipSchema.parse(parseBody(event));
+      const relationship = await relationshipService.retractRelationship(relationshipId, input.reason, ctx.userId!);
+      await auditService.logAuditEvent(
+        'RETRACT_RELATIONSHIP',
+        'relationship',
+        relationship.relationshipId,
+        ctx.userId!,
+        { metadata: { reason: input.reason }, requestId: ctx.requestId }
+      );
+      return jsonResponse(200, relationship);
+    },
+  },
+
+  // Public: Relationships (for entity pages)
+  'GET /entities/{entityId}/relationships': {
+    handler: async (event, _ctx) => {
+      const entityId = getPathParam(event, 'entityId');
+      // Only return published relationships
+      const relationships = await relationshipService.getPublicRelationshipsForEntity(entityId);
+      return jsonResponse(200, { items: relationships });
     },
   },
 };

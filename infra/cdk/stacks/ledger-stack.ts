@@ -501,6 +501,7 @@ export class LedgerStack extends cdk.Stack {
       '/entities',
       '/entities/{entityId}',
       '/entities/{entityId}/cards',
+      '/entities/{entityId}/relationships',
       '/cards',
       '/cards/{cardId}',
       '/sources/{sourceId}',
