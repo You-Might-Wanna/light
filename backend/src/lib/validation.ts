@@ -12,7 +12,7 @@ import {
 } from '@ledger/shared';
 
 // Common validators
-export const uuidSchema = z.string().uuid();
+export const uuidSchema = z.uuid();
 export const ulidSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
 export const idSchema = z.union([uuidSchema, ulidSchema]);
 
