@@ -957,13 +957,13 @@ export async function handler(
 
     // Handle Zod validation errors
     if (error instanceof ZodError) {
-      logger.warn({ errors: error.errors }, 'Validation error');
+      logger.warn({ errors: error.issues }, 'Validation error');
       return jsonResponse(400, {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Validation failed',
           requestId,
-          details: { issues: error.errors },
+          details: { issues: error.issues },
         },
       } as ApiError);
     }
