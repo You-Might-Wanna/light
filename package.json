@@ -24,5 +24,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@types/source-map-support": "^0.5.10",
+    "source-map-support": "^0.5.21"
   }
 }

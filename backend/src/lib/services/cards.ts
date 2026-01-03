@@ -374,25 +374,45 @@ export async function listCards(
     return listPublishedCards(query);
   }
 
-  // Admin endpoint - scan all cards with optional status filter
+  // Admin endpoint - scan all cards, then filter by status after deduplication
+  // We scan for version entries (SK starts with V#) and deduplicate to get latest version per card
   const limit = query.limit || 20;
+  const scanLimit = limit * 10; // Over-fetch to account for multiple versions and status filtering
   const exclusiveStartKey = query.cursor ? decodeCursor(query.cursor) : undefined;
 
+  // Scan without status filter - we'll filter after deduplicating
   const { items, lastEvaluatedKey } = await scanItems<EvidenceCard & { PK: string; SK: string }>({
     TableName: TABLE,
-    FilterExpression: query.status
-      ? 'begins_with(PK, :prefix) AND #status = :status'
-      : 'begins_with(PK, :prefix)',
-    ExpressionAttributeNames: query.status ? { '#status': 'status' } : undefined,
+    FilterExpression: 'begins_with(PK, :prefix) AND begins_with(SK, :skPrefix)',
     ExpressionAttributeValues: {
       ':prefix': 'CARD#',
-      ...(query.status && { ':status': query.status }),
+      ':skPrefix': 'V#',
     },
-    Limit: limit,
+    Limit: scanLimit,
     ExclusiveStartKey: exclusiveStartKey,
   });
 
-  const cards = items.map((item) => stripKeys(item));
+  // Deduplicate by cardId, keeping only the highest version
+  const cardMap = new Map<string, EvidenceCard & { PK: string; SK: string }>();
+  for (const item of items) {
+    const existing = cardMap.get(item.cardId);
+    if (!existing || item.version > existing.version) {
+      cardMap.set(item.cardId, item);
+    }
+  }
+
+  // Get the deduplicated cards, filter by status if specified, then limit
+  let deduplicatedCards = Array.from(cardMap.values())
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); // Most recently updated first
+
+  // Filter by status AFTER deduplication so we get the current status
+  if (query.status) {
+    deduplicatedCards = deduplicatedCards.filter(c => c.status === query.status);
+  }
+
+  deduplicatedCards = deduplicatedCards.slice(0, limit);
+
+  const cards = deduplicatedCards.map((item) => stripKeys(item));
 
   return {
     items: cards,
@@ -459,6 +479,48 @@ export async function listEntityCards(
     items: cards,
     cursor: lastEvaluatedKey ? encodeCursor(lastEvaluatedKey) : undefined,
     hasMore: !!lastEvaluatedKey,
+  };
+}
+
+/**
+ * Get dashboard stats for admin
+ */
+export async function getAdminStats(): Promise<{
+  publishedCards: number;
+  draftCards: number;
+  reviewCards: number;
+  totalCards: number;
+}> {
+  // Scan all card versions and deduplicate to get current status of each card
+  const { items } = await scanItems<EvidenceCard & { PK: string; SK: string }>({
+    TableName: TABLE,
+    FilterExpression: 'begins_with(PK, :prefix) AND begins_with(SK, :skPrefix)',
+    ExpressionAttributeValues: {
+      ':prefix': 'CARD#',
+      ':skPrefix': 'V#',
+    },
+    Limit: 1000, // Should be enough for now
+  });
+
+  // Deduplicate by cardId, keeping only the highest version
+  const cardMap = new Map<string, EvidenceCard>();
+  for (const item of items) {
+    const existing = cardMap.get(item.cardId);
+    if (!existing || item.version > existing.version) {
+      cardMap.set(item.cardId, item);
+    }
+  }
+
+  const cards = Array.from(cardMap.values());
+  const publishedCards = cards.filter(c => c.status === 'PUBLISHED').length;
+  const draftCards = cards.filter(c => c.status === 'DRAFT').length;
+  const reviewCards = cards.filter(c => c.status === 'REVIEW').length;
+
+  return {
+    publishedCards,
+    draftCards,
+    reviewCards,
+    totalCards: cards.length,
   };
 }
 

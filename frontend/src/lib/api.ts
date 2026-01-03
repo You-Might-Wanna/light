@@ -182,6 +182,22 @@ class ApiClient {
     return this.request(`/admin/cards${qs ? `?${qs}` : ''}`);
   }
 
+  async getAdminCard(cardId: string): Promise<EvidenceCardWithEntities> {
+    return this.request(`/admin/cards/${cardId}`);
+  }
+
+  async getAdminStats(): Promise<{
+    publishedCards: number;
+    draftCards: number;
+    reviewCards: number;
+    totalCards: number;
+    pendingReview: number;
+    entitiesTracked: number | string;
+    pendingIntake: number | string;
+  }> {
+    return this.request('/admin/stats');
+  }
+
   async createCard(data: CreateCardRequest): Promise<EvidenceCard> {
     return this.request('/admin/cards', {
       method: 'POST',

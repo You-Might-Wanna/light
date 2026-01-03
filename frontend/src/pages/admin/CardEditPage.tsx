@@ -63,7 +63,7 @@ export default function AdminCardEditPage() {
   async function loadCard() {
     try {
       setLoading(true);
-      const card = await api.getCard(cardId!);
+      const card = await api.getAdminCard(cardId!);
 
       setTitle(card.title);
       setClaim(card.claim);

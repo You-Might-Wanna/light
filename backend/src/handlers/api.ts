@@ -339,6 +339,14 @@ const routes: Record<string, Record<string, RouteHandler>> = {
       return jsonResponse(200, result);
     },
   },
+  'GET /admin/cards/{cardId}': {
+    handler: async (event, _ctx) => {
+      const cardId = getPathParam(event, 'cardId');
+      const card = await cardService.getCardWithEntities(cardId);
+      // Admin can view any status
+      return jsonResponse(200, card);
+    },
+  },
   'POST /admin/cards': {
     handler: async (event, ctx) => {
       const input = createCardSchema.parse(parseBody(event));
@@ -467,6 +475,28 @@ const routes: Record<string, Record<string, RouteHandler>> = {
         { requestId: ctx.requestId }
       );
       return jsonResponse(200, card);
+    },
+  },
+
+  // Admin: Stats
+  'GET /admin/stats': {
+    handler: async () => {
+      const cardStats = await cardService.getAdminStats();
+      // Get entity count
+      const entities = await entityService.listEntities({ limit: 1 });
+      // Get pending intake count
+      const pendingIntake = await intakeService.listIntakeByStatus('NEW', 1);
+
+      return jsonResponse(200, {
+        publishedCards: cardStats.publishedCards,
+        draftCards: cardStats.draftCards,
+        reviewCards: cardStats.reviewCards,
+        totalCards: cardStats.totalCards,
+        pendingReview: cardStats.draftCards + cardStats.reviewCards,
+        // These are approximations - will need proper count endpoints
+        entitiesTracked: entities.hasMore ? '10+' : entities.items.length,
+        pendingIntake: pendingIntake.items.length + (pendingIntake.lastEvaluatedKey ? '+' : ''),
+      });
     },
   },
 

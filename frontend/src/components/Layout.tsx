@@ -61,7 +61,7 @@ export default function Layout({ isAdmin = false }: LayoutProps) {
             <div className="flex items-center space-x-4">
               {!isAdmin && (
                 <Link
-                  to="/admin/login"
+                  to="/admin"
                   className="text-sm text-gray-500 hover:text-gray-700"
                 >
                   Admin
