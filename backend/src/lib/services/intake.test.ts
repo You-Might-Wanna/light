@@ -243,5 +243,46 @@ describe('intake service', () => {
       const items = parseRssFeed(xml);
       expect(items).toHaveLength(0);
     });
+
+    it('handles SEC litigation releases format with newlines in link tags', () => {
+      // SEC litigation releases have newlines between URL and closing tag
+      const xml = `
+        <?xml version="1.0" encoding="utf-8"?>
+        <rss version="2.0" xml:base="https://www.sec.gov/">
+          <channel>
+            <title>Litigation Releases</title>
+            <item>
+              <title>David J. Bradford and Gerardo L. Linarducci</title>
+              <link>https://www.sec.gov/enforcement-litigation/litigation-releases/lr-26456
+</link>
+              <description>David J. Bradford and Gerardo L. Linarducci</description>
+              <pubDate>Tue, 30 Dec 2025 17:27:40 -0500</pubDate>
+              <dc:creator>LR-26456</dc:creator>
+              <guid isPermaLink="false">9a667d43-6c25-4baa-a54d-f12922530803</guid>
+            </item>
+            <item>
+              <title>Caroline Ellison, Gary Wang, and Nishad Singh</title>
+              <link>https://www.sec.gov/enforcement-litigation/litigation-releases/lr-26450
+</link>
+              <description>Caroline Ellison, Gary Wang, and Nishad Singh</description>
+              <pubDate>Fri, 19 Dec 2025 11:39:26 -0500</pubDate>
+              <dc:creator>LR-26450</dc:creator>
+              <guid isPermaLink="false">00487736-b86f-411c-bb5e-17660121d154</guid>
+            </item>
+          </channel>
+        </rss>
+      `;
+
+      const items = parseRssFeed(xml);
+
+      expect(items).toHaveLength(2);
+      expect(items[0].title).toBe('David J. Bradford and Gerardo L. Linarducci');
+      expect(items[0].link).toBe('https://www.sec.gov/enforcement-litigation/litigation-releases/lr-26456');
+      expect(items[0].pubDate).toBe('Tue, 30 Dec 2025 17:27:40 -0500');
+      expect(items[0].guid).toBe('9a667d43-6c25-4baa-a54d-f12922530803');
+
+      expect(items[1].title).toBe('Caroline Ellison, Gary Wang, and Nishad Singh');
+      expect(items[1].link).toBe('https://www.sec.gov/enforcement-litigation/litigation-releases/lr-26450');
+    });
   });
 });

@@ -174,8 +174,8 @@ function extractTag(content: string, tagName: string): string | null {
     return cdataMatch[1].trim();
   }
 
-  // Handle regular content
-  const regex = new RegExp(`<${tagName}[^>]*>([^<]*)<\\/${tagName}>`, 'i');
+  // Handle regular content (including content with newlines like SEC feeds)
+  const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i');
   const match = regex.exec(content);
   return match ? match[1].trim() : null;
 }
