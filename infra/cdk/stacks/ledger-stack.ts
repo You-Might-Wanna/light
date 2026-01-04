@@ -614,13 +614,13 @@ export class LedgerStack extends cdk.Stack {
       responseHeadersPolicyName: `${prefix}-security-headers`,
       securityHeadersBehavior: {
         contentSecurityPolicy: {
-          // CSP for static SPA + same-origin API
+          // CSP for static SPA + same-origin API + Google Fonts
           contentSecurityPolicy: [
             "default-src 'self'",
             "script-src 'self'",
-            "style-src 'self' 'unsafe-inline'", // Often needed for CSS-in-JS
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "img-src 'self' data: https:",
-            "font-src 'self' data:",
+            "font-src 'self' data: https://fonts.gstatic.com",
             "connect-src 'self' https://cognito-idp.us-east-1.amazonaws.com",
             "object-src 'none'",
             "base-uri 'self'",

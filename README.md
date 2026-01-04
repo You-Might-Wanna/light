@@ -105,11 +105,15 @@ Set via CDK or SSM Parameter Store:
 - `GET /entities` - List entities
 - `GET /entities/{id}` - Get entity
 - `GET /entities/{id}/cards` - Get entity's cards
+- `GET /entities/{id}/summary` - Get entity fact pack summary
+- `GET /entities/{id}/relationships` - Get entity relationships
+- `GET /entities/{id}/ownership-tree` - Get ownership structure graph
 - `GET /cards` - List published cards
 - `GET /cards/{id}` - Get card with entities
 - `GET /sources/{id}` - Get source metadata
 - `GET /sources/{id}/download` - Get presigned download URL
 - `GET /sources/{id}/verification` - Get verification manifest
+- `GET /relationships/{id}` - Get relationship details
 
 ### Admin (JWT required)
 
@@ -126,6 +130,38 @@ Set via CDK or SSM Parameter Store:
 - `POST /admin/cards/{id}/correct` - Mark as corrected
 - `POST /admin/cards/{id}/retract` - Retract card
 - `GET /admin/audit` - List audit logs
+- `POST /admin/relationships` - Create relationship
+- `PUT /admin/relationships/{id}` - Update relationship
+- `POST /admin/relationships/{id}/publish` - Publish relationship
+- `POST /admin/relationships/{id}/retract` - Retract relationship
+- `POST /admin/entities/{id}/aliases` - Add entity alias
+
+## Features
+
+### Entity Summaries (Fact Packs)
+
+The platform generates deterministic fact pack summaries for each entity:
+- Groups published claims by type (enforcement actions, settlements, penalties, etc.)
+- Calculates total monetary impact
+- Generates template-driven narrative summaries
+- Supports filtering by claim type and date range
+
+### Claim Metadata
+
+Evidence cards support rich metadata for enhanced claims:
+- **Claim Stance**: Who is making the claim (agency, court, company, etc.)
+- **Claim Type**: Category of claim (enforcement, settlement, penalty, etc.)
+- **Monetary Amount**: Financial impact with currency and type
+- **Affected Count**: Number of individuals, accounts, or facilities affected
+- **Source References**: Page numbers, sections, and quotes from sources
+
+### Entity Relationships
+
+Track corporate ownership and relationships:
+- Relationship types: OWNS, CONTROLS, SUBSIDIARY_OF, ACQUIRED, and more
+- Ownership percentage tracking
+- Ownership tree visualization
+- All relationships require verified sources
 
 ## Security Features
 
