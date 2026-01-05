@@ -83,6 +83,36 @@ export async function getSource(sourceId: string): Promise<Source> {
   return stripKeys(item);
 }
 
+/**
+ * Fetch multiple sources by their IDs.
+ * Returns an array of { sourceId, title, url, verificationStatus } for each found source.
+ * Missing sources are returned with title '[Source Not Found]'.
+ */
+export async function getSourcesByIds(
+  sourceIds: string[]
+): Promise<Array<{ sourceId: string; title: string; url?: string; verificationStatus: string }>> {
+  const results = await Promise.all(
+    sourceIds.map(async (id) => {
+      try {
+        const source = await getSource(id);
+        return {
+          sourceId: source.sourceId,
+          title: source.title,
+          url: source.url,
+          verificationStatus: source.verificationStatus,
+        };
+      } catch {
+        return {
+          sourceId: id,
+          title: '[Source Not Found]',
+          verificationStatus: 'UNKNOWN',
+        };
+      }
+    })
+  );
+  return results;
+}
+
 export async function updateSource(
   sourceId: string,
   input: UpdateSourceInput,

@@ -30,7 +30,7 @@ vi.mock('../config.js', () => ({
 }));
 
 // Import after mocks are set up
-import { generateDownloadUrl } from './sources.js';
+import { generateDownloadUrl, getSourcesByIds } from './sources.js';
 import { getItem } from '../dynamodb.js';
 import { isSourceReferencedByPublishedCard } from './cards.js';
 
@@ -135,5 +135,72 @@ describe('generateDownloadUrl', () => {
       expect(error.statusCode).toBe(403);
       expect(error.message).toContain('not available for public download');
     });
+  });
+});
+
+describe('getSourcesByIds', () => {
+  const baseSource = {
+    PK: 'SOURCE#source-1',
+    SK: 'META',
+    sourceId: 'source-1',
+    title: 'First Document',
+    publisher: 'Publisher A',
+    url: 'https://example.com/doc1',
+    verificationStatus: 'VERIFIED',
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T00:00:00Z',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns source info for all found sources', async () => {
+    vi.mocked(getItem)
+      .mockResolvedValueOnce(baseSource)
+      .mockResolvedValueOnce({
+        ...baseSource,
+        sourceId: 'source-2',
+        title: 'Second Document',
+        url: 'https://example.com/doc2',
+        verificationStatus: 'PENDING',
+      });
+
+    const result = await getSourcesByIds(['source-1', 'source-2']);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      sourceId: 'source-1',
+      title: 'First Document',
+      url: 'https://example.com/doc1',
+      verificationStatus: 'VERIFIED',
+    });
+    expect(result[1]).toEqual({
+      sourceId: 'source-2',
+      title: 'Second Document',
+      url: 'https://example.com/doc2',
+      verificationStatus: 'PENDING',
+    });
+  });
+
+  it('returns placeholder for missing sources', async () => {
+    vi.mocked(getItem)
+      .mockResolvedValueOnce(baseSource)
+      .mockResolvedValueOnce(null); // source-2 not found
+
+    const result = await getSourcesByIds(['source-1', 'source-2']);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].title).toBe('First Document');
+    expect(result[1]).toEqual({
+      sourceId: 'source-2',
+      title: '[Source Not Found]',
+      verificationStatus: 'UNKNOWN',
+    });
+  });
+
+  it('returns empty array for empty input', async () => {
+    const result = await getSourcesByIds([]);
+    expect(result).toEqual([]);
   });
 });

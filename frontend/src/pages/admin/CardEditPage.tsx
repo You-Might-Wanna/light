@@ -97,6 +97,7 @@ export default function AdminCardEditPage() {
   const [tags, setTags] = useState('');
   const [selectedEntities, setSelectedEntities] = useState<EntitySearchResult[]>([]);
   const [sourceRefs, setSourceRefs] = useState<string[]>([]);
+  const [resolvedSources, setResolvedSources] = useState<Array<{ sourceId: string; title: string; url?: string; verificationStatus: string }>>([]);
 
   // Create entity modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -167,6 +168,7 @@ export default function AdminCardEditPage() {
       }
 
       setSourceRefs(card.sourceRefs);
+      setResolvedSources(card.sources || []);
       setCurrentStatus(card.status);
       if (card.scoreSignals) {
         setScoreSignals(card.scoreSignals);
@@ -410,19 +412,54 @@ export default function AdminCardEditPage() {
           />
         </div>
 
-        {/* Source Refs */}
+        {/* Sources */}
         <div>
-          <label htmlFor="sourceRefs" className="label">
-            Source IDs <span className="font-normal text-gray-500">(comma-separated)</span>
+          <label className="label">
+            Sources
           </label>
-          <input
-            id="sourceRefs"
-            type="text"
-            value={sourceRefs.join(', ')}
-            onChange={(e) => setSourceRefs(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-            className="input"
-            placeholder="source-id-1, source-id-2"
-          />
+          {resolvedSources.length > 0 ? (
+            <div className="space-y-2">
+              {resolvedSources.map((source) => (
+                <div
+                  key={source.sourceId}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{source.title}</p>
+                    {source.url && (
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:underline truncate block"
+                      >
+                        {source.url}
+                      </a>
+                    )}
+                  </div>
+                  <span
+                    className={`ml-3 px-2 py-1 text-xs font-medium rounded ${
+                      source.verificationStatus === 'VERIFIED'
+                        ? 'bg-green-100 text-green-800'
+                        : source.verificationStatus === 'PENDING'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {source.verificationStatus}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : sourceRefs.length > 0 ? (
+            <p className="text-sm text-gray-500 italic">
+              {sourceRefs.length} source(s) linked (loading details...)
+            </p>
+          ) : (
+            <p className="text-sm text-gray-500 italic">
+              No sources linked. Sources are automatically linked when promoting from the Intake Inbox.
+            </p>
+          )}
         </div>
 
         {/* Counterpoint */}

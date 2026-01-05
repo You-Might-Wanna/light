@@ -12,7 +12,7 @@ import {
   stripKeys,
 } from '../dynamodb.js';
 import { NotFoundError, InvalidStateTransitionError, SourceNotVerifiedError } from '../errors.js';
-import { getSource } from './sources.js';
+import { getSource, getSourcesByIds } from './sources.js';
 import { getEntitiesByIds } from './entities.js';
 import type { CreateCardInput, UpdateCardInput, CardQueryInput, EntityCardsQueryInput } from '../validation.js';
 
@@ -114,11 +114,15 @@ export async function getCardWithEntities(
   cardId: string
 ): Promise<EvidenceCardWithEntities> {
   const card = await getCard(cardId);
-  const entities = await getEntitiesByIds(card.entityIds);
+  const [entities, sources] = await Promise.all([
+    getEntitiesByIds(card.entityIds),
+    card.sourceRefs.length > 0 ? getSourcesByIds(card.sourceRefs) : Promise.resolve([]),
+  ]);
 
   return {
     ...card,
     entities,
+    sources,
   };
 }
 

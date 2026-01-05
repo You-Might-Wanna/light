@@ -79,6 +79,7 @@ export interface EvidenceCard {
 // Card with resolved entity names for display
 export interface EvidenceCardWithEntities extends EvidenceCard {
   entities: Array<{ entityId: string; name: string }>;
+  sources?: Array<{ sourceId: string; title: string; url?: string; verificationStatus: string }>;
 }
 
 // Request DTOs
