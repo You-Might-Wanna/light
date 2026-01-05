@@ -1,5 +1,5 @@
 import { ulid } from 'ulid';
-import type { Entity, PaginatedResponse } from '@ledger/shared';
+import type { Entity, PaginatedResponse, EntitySearchResult, EntitySearchResponse } from '@ledger/shared';
 import { config } from '../config.js';
 import {
   getItem,
@@ -162,4 +162,43 @@ export async function getEntitiesByIds(
     })
   );
   return results;
+}
+
+/**
+ * Search entities by name prefix for typeahead selector.
+ * Uses scan with filter since DynamoDB doesn't support begins_with on GSI partition key.
+ * For larger datasets, consider Elasticsearch or OpenSearch.
+ */
+export async function searchEntities(
+  query: string,
+  limit: number = 10
+): Promise<EntitySearchResponse> {
+  const normalizedQuery = normalizeName(query);
+
+  if (normalizedQuery.length < 2) {
+    return { entities: [], hasMore: false };
+  }
+
+  // Scan entities and filter by normalized name prefix
+  // Note: For production scale, use a proper search service
+  const { items } = await scanItems<Entity & { PK: string; SK: string; GSI1PK: string }>({
+    TableName: TABLE,
+    FilterExpression: 'begins_with(PK, :prefix) AND SK = :sk AND begins_with(GSI1PK, :namePrefix)',
+    ExpressionAttributeValues: {
+      ':prefix': 'ENTITY#',
+      ':sk': 'META',
+      ':namePrefix': `NAME#${normalizedQuery}`,
+    },
+    Limit: limit + 1, // Fetch one extra to detect hasMore
+  });
+
+  const hasMore = items.length > limit;
+  const entities: EntitySearchResult[] = items.slice(0, limit).map((item) => ({
+    entityId: item.entityId,
+    name: item.name,
+    type: item.type,
+    aliases: item.aliases?.length ? item.aliases : undefined,
+  }));
+
+  return { entities, hasMore };
 }

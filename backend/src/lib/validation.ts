@@ -168,18 +168,32 @@ export const intakeQuerySchema = paginationSchema.extend({
   status: z.enum(intakeStatusValues).optional().default('NEW'),
 });
 
+// Schema for creating a new entity inline
+const createEntityInlineSchema = z.object({
+  name: z.string().min(1).max(500),
+  type: z.nativeEnum(EntityType),
+});
+
 export const intakePromoteSchema = z.object({
+  // Legacy single entity (backwards compat)
   entityId: idSchema.optional(),
-  createEntity: z.object({
-    name: z.string().min(1).max(500),
-    type: z.nativeEnum(EntityType),
-  }).optional(),
+  createEntity: createEntityInlineSchema.optional(),
+  // Multi-entity support
+  entityIds: z.array(idSchema).max(10).optional(),
+  createEntities: z.array(createEntityInlineSchema).max(5).optional(),
+  // Card metadata
   tags: z.array(z.string().max(100)).max(20).optional(),
   cardSummary: z.string().min(1).max(5000),
 }).refine(
-  (data) => data.entityId || data.createEntity,
-  { message: 'Either entityId or createEntity must be provided' }
+  (data) => data.entityId || data.createEntity || (data.entityIds && data.entityIds.length > 0) || (data.createEntities && data.createEntities.length > 0),
+  { message: 'At least one entity must be provided (entityId, createEntity, entityIds, or createEntities)' }
 );
+
+// Entity search schema (for typeahead)
+export const entitySearchSchema = z.object({
+  q: z.string().min(2).max(100),
+  limit: z.coerce.number().min(1).max(50).optional().default(10),
+});
 
 // Relationship schemas
 // Use Object.values to get the actual values from the const objects
@@ -265,3 +279,4 @@ export type EntitySummaryQueryInput = z.infer<typeof entitySummaryQuerySchema>;
 export type SourceReferenceInput = z.infer<typeof sourceReferenceSchema>;
 export type MonetaryAmountInput = z.infer<typeof monetaryAmountSchema>;
 export type AffectedCountInput = z.infer<typeof affectedCountSchema>;
+export type EntitySearchInput = z.infer<typeof entitySearchSchema>;

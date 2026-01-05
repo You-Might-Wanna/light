@@ -87,11 +87,19 @@ export interface IntakeListResponse {
 }
 
 export interface IntakePromoteRequest {
+  // Legacy single entity (backwards compat)
   entityId?: string;         // Optional: link to existing entity
   createEntity?: {           // Optional: create new entity
     name: string;
     type: string;
   };
+  // Multi-entity support
+  entityIds?: string[];      // Optional: link to multiple existing entities
+  createEntities?: Array<{   // Optional: create multiple new entities
+    name: string;
+    type: string;
+  }>;
+  // Card metadata
   tags?: string[];
   cardSummary: string;
 }
@@ -99,6 +107,7 @@ export interface IntakePromoteRequest {
 export interface IntakePromoteResponse {
   sourceId: string;
   cardId: string;
+  entityIds?: string[];      // All entity IDs linked to the card
 }
 
 export interface IntakeIngestResult {

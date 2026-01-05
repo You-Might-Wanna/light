@@ -27,6 +27,7 @@ import type {
   OwnershipTreeResponse,
   EntitySummary,
   ClaimType,
+  EntitySearchResponse,
 } from '@ledger/shared';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -115,6 +116,13 @@ class ApiClient {
     if (params?.cursor) searchParams.set('cursor', params.cursor);
     const qs = searchParams.toString();
     return this.request(`/entities${qs ? `?${qs}` : ''}`);
+  }
+
+  async searchEntities(query: string, limit?: number): Promise<EntitySearchResponse> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', query);
+    if (limit) searchParams.set('limit', String(limit));
+    return this.request(`/entities/search?${searchParams.toString()}`);
   }
 
   async getEntity(entityId: string): Promise<Entity> {

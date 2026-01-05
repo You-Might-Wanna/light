@@ -187,3 +187,16 @@ export interface EntitySummaryQueryParams {
   dateFrom?: string;
   dateTo?: string;
 }
+
+// Entity search types (for typeahead selector)
+export interface EntitySearchResult {
+  entityId: string;
+  name: string;
+  type: EntityType;
+  aliases?: string[];  // Include aliases for disambiguation display
+}
+
+export interface EntitySearchResponse {
+  entities: EntitySearchResult[];
+  hasMore: boolean;
+}

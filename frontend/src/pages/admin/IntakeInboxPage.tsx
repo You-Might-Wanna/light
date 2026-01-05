@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import type { IntakeItem, IntakeStatus, Entity } from '@ledger/shared';
+import type { IntakeItem, IntakeStatus, EntitySearchResult, EntityType } from '@ledger/shared';
 import { api } from '../../lib/api';
 import ErrorMessage from '../../components/ErrorMessage';
 import { useToast } from '../../components/Toast';
+import EntitySelector from '../../components/EntitySelector';
+import CreateEntityModal from '../../components/CreateEntityModal';
 
 type StatusFilter = IntakeStatus | 'ALL';
 
@@ -56,24 +58,21 @@ export default function IntakeInboxPage() {
   const [statusFilter, setStatusFilter] = useState<IntakeStatus>('NEW');
   const [selectedItem, setSelectedItem] = useState<IntakeItem | null>(null);
   const [promoting, setPromoting] = useState(false);
-  const [entities, setEntities] = useState<Entity[]>([]);
   const { showError, showSuccess } = useToast();
 
   // Promote form state
-  const [promoteMode, setPromoteMode] = useState<'existing' | 'new'>('new');
-  const [selectedEntityId, setSelectedEntityId] = useState('');
-  const [newEntityName, setNewEntityName] = useState('');
-  const [newEntityType, setNewEntityType] = useState<string>('AGENCY');
+  const [selectedEntities, setSelectedEntities] = useState<EntitySearchResult[]>([]);
+  const [newEntitiesToCreate, setNewEntitiesToCreate] = useState<Array<{ name: string; type: EntityType }>>([]);
   const [cardSummary, setCardSummary] = useState('');
   const [tags, setTags] = useState('');
+
+  // Create entity modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createEntityName, setCreateEntityName] = useState('');
 
   useEffect(() => {
     loadItems();
   }, [statusFilter]);
-
-  useEffect(() => {
-    loadEntities();
-  }, []);
 
   async function loadItems() {
     try {
@@ -85,15 +84,6 @@ export default function IntakeInboxPage() {
       setError(err instanceof Error ? err : new Error('Failed to load intake items'));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadEntities() {
-    try {
-      const result = await api.listEntities({ limit: 100 });
-      setEntities(result.items);
-    } catch (err) {
-      console.error('Failed to load entities:', err);
     }
   }
 
@@ -111,13 +101,21 @@ export default function IntakeInboxPage() {
 
   function openPromoteModal(item: IntakeItem) {
     setSelectedItem(item);
-    setPromoteMode('new');
-    setSelectedEntityId('');
-    setNewEntityName(item.publisher);
-    setNewEntityType('AGENCY');
+    setSelectedEntities([]);
+    setNewEntitiesToCreate([]);
     setCardSummary(generateDefaultSummary(item));
     setTags(item.suggestedTags?.join(', ') || '');
     setPromoting(true);
+  }
+
+  function handleCreateNewEntity(name: string) {
+    setCreateEntityName(name);
+    setShowCreateModal(true);
+  }
+
+  function handleEntityCreated(entity: EntitySearchResult) {
+    setSelectedEntities((prev) => [...prev, entity]);
+    setShowCreateModal(false);
   }
 
   async function handlePromote() {
@@ -128,12 +126,8 @@ export default function IntakeInboxPage() {
       .map((t) => t.trim())
       .filter(Boolean);
 
-    if (promoteMode === 'existing' && !selectedEntityId) {
-      showError('Please select an entity');
-      return;
-    }
-    if (promoteMode === 'new' && !newEntityName) {
-      showError('Please enter entity name');
+    if (selectedEntities.length === 0 && newEntitiesToCreate.length === 0) {
+      showError('Please select or create at least one entity');
       return;
     }
     if (!cardSummary) {
@@ -143,11 +137,8 @@ export default function IntakeInboxPage() {
 
     try {
       await api.promoteIntake(selectedItem.intakeId, {
-        entityId: promoteMode === 'existing' ? selectedEntityId : undefined,
-        createEntity:
-          promoteMode === 'new'
-            ? { name: newEntityName, type: newEntityType as 'AGENCY' | 'CORPORATION' | 'NONPROFIT' | 'VENDOR' | 'INDIVIDUAL_PUBLIC_OFFICIAL' }
-            : undefined,
+        entityIds: selectedEntities.map((e) => e.entityId),
+        createEntities: newEntitiesToCreate.length > 0 ? newEntitiesToCreate : undefined,
         cardSummary,
         tags: tagList,
       });
@@ -305,78 +296,19 @@ export default function IntakeInboxPage() {
               {/* Entity Selection */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Entity
+                  Entities
                 </label>
-                <div className="flex gap-4 mb-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="promoteMode"
-                      value="new"
-                      checked={promoteMode === 'new'}
-                      onChange={() => setPromoteMode('new')}
-                    />
-                    <span className="text-sm">Create new entity</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="promoteMode"
-                      value="existing"
-                      checked={promoteMode === 'existing'}
-                      onChange={() => setPromoteMode('existing')}
-                    />
-                    <span className="text-sm">Use existing entity</span>
-                  </label>
-                </div>
-
-                {promoteMode === 'new' ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">
-                        Entity Name
-                      </label>
-                      <input
-                        type="text"
-                        value={newEntityName}
-                        onChange={(e) => setNewEntityName(e.target.value)}
-                        className="input w-full"
-                        placeholder="e.g., Federal Trade Commission"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">
-                        Entity Type
-                      </label>
-                      <select
-                        value={newEntityType}
-                        onChange={(e) => setNewEntityType(e.target.value)}
-                        className="input w-full"
-                      >
-                        <option value="AGENCY">Agency</option>
-                        <option value="CORPORATION">Corporation</option>
-                        <option value="NONPROFIT">Nonprofit</option>
-                        <option value="VENDOR">Vendor</option>
-                        <option value="INDIVIDUAL_PUBLIC_OFFICIAL">
-                          Individual/Public Official
-                        </option>
-                      </select>
-                    </div>
-                  </div>
-                ) : (
-                  <select
-                    value={selectedEntityId}
-                    onChange={(e) => setSelectedEntityId(e.target.value)}
-                    className="input w-full"
-                  >
-                    <option value="">Select an entity...</option>
-                    {entities.map((entity) => (
-                      <option key={entity.entityId} value={entity.entityId}>
-                        {entity.name} ({entity.type})
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <p className="text-xs text-gray-500 mb-2">
+                  Search for existing entities or create new ones. Multiple entities can be selected.
+                </p>
+                <EntitySelector
+                  value={selectedEntities}
+                  onChange={setSelectedEntities}
+                  multiple={true}
+                  allowCreate={true}
+                  onCreateNew={handleCreateNewEntity}
+                  placeholder="Search entities..."
+                />
               </div>
 
               {/* Card Summary */}
@@ -425,6 +357,14 @@ export default function IntakeInboxPage() {
           </div>
         </div>
       )}
+
+      {/* Create Entity Modal */}
+      <CreateEntityModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={handleEntityCreated}
+        initialName={createEntityName}
+      />
     </div>
   );
 }

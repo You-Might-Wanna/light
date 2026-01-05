@@ -10,9 +10,12 @@ import type {
   AffectedCount,
   MonetaryAmountType,
   AffectedCountUnit,
+  EntitySearchResult,
 } from '@ledger/shared';
 import { api } from '../../lib/api';
 import ErrorMessage from '../../components/ErrorMessage';
+import EntitySelector from '../../components/EntitySelector';
+import CreateEntityModal from '../../components/CreateEntityModal';
 
 const categories: Array<{ value: CardCategory; label: string }> = [
   { value: 'labor', label: 'Labor' },
@@ -92,8 +95,12 @@ export default function AdminCardEditPage() {
   const [evidenceStrength, setEvidenceStrength] = useState<EvidenceStrength>('MEDIUM');
   const [counterpoint, setCounterpoint] = useState('');
   const [tags, setTags] = useState('');
-  const [entityIds, setEntityIds] = useState<string[]>([]);
+  const [selectedEntities, setSelectedEntities] = useState<EntitySearchResult[]>([]);
   const [sourceRefs, setSourceRefs] = useState<string[]>([]);
+
+  // Create entity modal state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createEntityName, setCreateEntityName] = useState('');
   const [scoreSignals, setScoreSignals] = useState<ScoreSignals>({
     severity: 0,
     intent: 0,
@@ -132,7 +139,33 @@ export default function AdminCardEditPage() {
       setEvidenceStrength(card.evidenceStrength);
       setCounterpoint(card.counterpoint || '');
       setTags(card.tags?.join(', ') || '');
-      setEntityIds(card.entityIds);
+
+      // Convert entities array to EntitySearchResult format
+      // The entities array from the API includes { entityId, name }
+      // We need to fetch full entity details for type info
+      if (card.entities && card.entities.length > 0) {
+        const entitiesWithType: EntitySearchResult[] = await Promise.all(
+          card.entities.map(async (e) => {
+            try {
+              const fullEntity = await api.getEntity(e.entityId);
+              return {
+                entityId: e.entityId,
+                name: e.name,
+                type: fullEntity.type,
+              };
+            } catch {
+              // If entity fetch fails, use a default type
+              return {
+                entityId: e.entityId,
+                name: e.name,
+                type: 'CORPORATION' as const,
+              };
+            }
+          })
+        );
+        setSelectedEntities(entitiesWithType);
+      }
+
       setSourceRefs(card.sourceRefs);
       setCurrentStatus(card.status);
       if (card.scoreSignals) {
@@ -150,6 +183,16 @@ export default function AdminCardEditPage() {
     }
   }
 
+  function handleCreateNewEntity(name: string) {
+    setCreateEntityName(name);
+    setShowCreateModal(true);
+  }
+
+  function handleEntityCreated(entity: EntitySearchResult) {
+    setSelectedEntities((prev) => [...prev, entity]);
+    setShowCreateModal(false);
+  }
+
   async function handleSave() {
     try {
       setSaving(true);
@@ -165,7 +208,7 @@ export default function AdminCardEditPage() {
         evidenceStrength,
         counterpoint: counterpoint || undefined,
         tags: tags ? tags.split(',').map((t) => t.trim()) : [],
-        entityIds,
+        entityIds: selectedEntities.map((e) => e.entityId),
         sourceRefs,
         scoreSignals,
         // Claim metadata (only include if set)
@@ -349,18 +392,21 @@ export default function AdminCardEditPage() {
           </div>
         </div>
 
-        {/* Entity IDs */}
+        {/* Entities */}
         <div>
-          <label htmlFor="entityIds" className="label">
-            Entity IDs * <span className="font-normal text-gray-500">(comma-separated)</span>
+          <label className="label">
+            Entities *
           </label>
-          <input
-            id="entityIds"
-            type="text"
-            value={entityIds.join(', ')}
-            onChange={(e) => setEntityIds(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-            className="input"
-            placeholder="entity-id-1, entity-id-2"
+          <p className="text-xs text-gray-500 mb-2">
+            Search for existing entities or create new ones.
+          </p>
+          <EntitySelector
+            value={selectedEntities}
+            onChange={setSelectedEntities}
+            multiple={true}
+            allowCreate={true}
+            onCreateNew={handleCreateNewEntity}
+            placeholder="Search entities..."
           />
         </div>
 
@@ -654,6 +700,14 @@ export default function AdminCardEditPage() {
           </button>
         </div>
       </div>
+
+      {/* Create Entity Modal */}
+      <CreateEntityModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={handleEntityCreated}
+        initialName={createEntityName}
+      />
     </div>
   );
 }

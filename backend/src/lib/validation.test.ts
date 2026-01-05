@@ -9,6 +9,8 @@ import {
   createSourceSchema,
   createCardSchema,
   scoreSignalsSchema,
+  entitySearchSchema,
+  intakePromoteSchema,
 } from './validation.js';
 import { EntityType, DocType, CardCategory, EvidenceStrength } from '@ledger/shared';
 
@@ -259,6 +261,126 @@ describe('validation schemas', () => {
         createCardSchema.safeParse({
           ...validCard,
           entityIds: Array(21).fill('01ARZ3NDEKTSV4RRFFQ69G5FAV'),
+        }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('entitySearchSchema', () => {
+    it('accepts valid search query', () => {
+      const result = entitySearchSchema.parse({ q: 'Acme' });
+      expect(result.q).toBe('Acme');
+      expect(result.limit).toBe(10); // default
+    });
+
+    it('accepts custom limit', () => {
+      const result = entitySearchSchema.parse({ q: 'Acme', limit: '25' });
+      expect(result.limit).toBe(25);
+    });
+
+    it('rejects query shorter than 2 characters', () => {
+      expect(entitySearchSchema.safeParse({ q: 'A' }).success).toBe(false);
+      expect(entitySearchSchema.safeParse({ q: '' }).success).toBe(false);
+    });
+
+    it('rejects query longer than 100 characters', () => {
+      expect(entitySearchSchema.safeParse({ q: 'A'.repeat(101) }).success).toBe(false);
+    });
+
+    it('enforces max limit of 50', () => {
+      expect(entitySearchSchema.safeParse({ q: 'Acme', limit: '51' }).success).toBe(false);
+    });
+
+    it('enforces min limit of 1', () => {
+      expect(entitySearchSchema.safeParse({ q: 'Acme', limit: '0' }).success).toBe(false);
+    });
+  });
+
+  describe('intakePromoteSchema', () => {
+    it('accepts single entityId (legacy)', () => {
+      const result = intakePromoteSchema.parse({
+        entityId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.entityId).toBe('01ARZ3NDEKTSV4RRFFQ69G5FAV');
+    });
+
+    it('accepts createEntity (legacy)', () => {
+      const result = intakePromoteSchema.parse({
+        createEntity: { name: 'Acme Corp', type: 'CORPORATION' },
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.createEntity?.name).toBe('Acme Corp');
+    });
+
+    it('accepts multiple entityIds', () => {
+      const result = intakePromoteSchema.parse({
+        entityIds: ['01ARZ3NDEKTSV4RRFFQ69G5FAV', '01ARZ3NDEKTSV4RRFFQ69G5FAW'],
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.entityIds).toHaveLength(2);
+    });
+
+    it('accepts createEntities array', () => {
+      const result = intakePromoteSchema.parse({
+        createEntities: [
+          { name: 'Acme Corp', type: 'CORPORATION' },
+          { name: 'Widget Inc', type: 'CORPORATION' },
+        ],
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.createEntities).toHaveLength(2);
+    });
+
+    it('accepts mixed entityIds and createEntities', () => {
+      const result = intakePromoteSchema.parse({
+        entityIds: ['01ARZ3NDEKTSV4RRFFQ69G5FAV'],
+        createEntities: [{ name: 'New Entity', type: 'AGENCY' }],
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.entityIds).toHaveLength(1);
+      expect(result.createEntities).toHaveLength(1);
+    });
+
+    it('rejects when no entity is provided', () => {
+      expect(
+        intakePromoteSchema.safeParse({
+          cardSummary: 'Summary of the article',
+        }).success
+      ).toBe(false);
+    });
+
+    it('rejects empty entityIds array when no other entity provided', () => {
+      expect(
+        intakePromoteSchema.safeParse({
+          entityIds: [],
+          cardSummary: 'Summary of the article',
+        }).success
+      ).toBe(false);
+    });
+
+    it('enforces max 10 entityIds', () => {
+      expect(
+        intakePromoteSchema.safeParse({
+          entityIds: Array(11).fill('01ARZ3NDEKTSV4RRFFQ69G5FAV'),
+          cardSummary: 'Summary',
+        }).success
+      ).toBe(false);
+    });
+
+    it('enforces max 5 createEntities', () => {
+      expect(
+        intakePromoteSchema.safeParse({
+          createEntities: Array(6).fill({ name: 'Entity', type: 'CORPORATION' }),
+          cardSummary: 'Summary',
+        }).success
+      ).toBe(false);
+    });
+
+    it('requires cardSummary', () => {
+      expect(
+        intakePromoteSchema.safeParse({
+          entityId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
         }).success
       ).toBe(false);
     });

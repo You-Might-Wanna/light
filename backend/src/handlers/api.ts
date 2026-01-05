@@ -42,6 +42,7 @@ import {
   ownershipTreeQuerySchema,
   addAliasSchema,
   entitySummaryQuerySchema,
+  entitySearchSchema,
 } from '../lib/validation.js';
 
 // Route handler type
@@ -193,6 +194,13 @@ const routes: Record<string, Record<string, RouteHandler>> = {
     handler: async (event, _ctx) => {
       const query = entityQuerySchema.parse(getQueryParams(event));
       const result = await entityService.listEntities(query);
+      return jsonResponse(200, result);
+    },
+  },
+  'GET /entities/search': {
+    handler: async (event, _ctx) => {
+      const { q, limit } = entitySearchSchema.parse(getQueryParams(event));
+      const result = await entityService.searchEntities(q, limit);
       return jsonResponse(200, result);
     },
   },
@@ -579,11 +587,14 @@ const routes: Record<string, Record<string, RouteHandler>> = {
       // Get the intake item
       const intakeItem = await intakeService.getIntakeItem(intakeId);
 
-      // Determine entity ID (use existing or create new)
-      let entityId: string;
+      // Collect all entity IDs (supports both legacy single and new multi-entity format)
+      const entityIds: string[] = [];
+
+      // Legacy single entity support
       if (input.entityId) {
-        entityId = input.entityId;
-      } else if (input.createEntity) {
+        entityIds.push(input.entityId);
+      }
+      if (input.createEntity) {
         const entity = await entityService.createEntity(
           {
             name: input.createEntity.name,
@@ -592,16 +603,46 @@ const routes: Record<string, Record<string, RouteHandler>> = {
           },
           ctx.userId!
         );
-        entityId = entity.entityId;
+        entityIds.push(entity.entityId);
         await auditService.logAuditEvent(
           'CREATE_ENTITY',
           'entity',
-          entityId,
+          entity.entityId,
           ctx.userId!,
           { requestId: ctx.requestId, metadata: { fromIntake: intakeId } }
         );
-      } else {
-        throw new ValidationError('Either entityId or createEntity must be provided');
+      }
+
+      // Multi-entity support
+      if (input.entityIds) {
+        entityIds.push(...input.entityIds);
+      }
+      if (input.createEntities) {
+        for (const newEntity of input.createEntities) {
+          const entity = await entityService.createEntity(
+            {
+              name: newEntity.name,
+              type: newEntity.type,
+              aliases: [],
+            },
+            ctx.userId!
+          );
+          entityIds.push(entity.entityId);
+          await auditService.logAuditEvent(
+            'CREATE_ENTITY',
+            'entity',
+            entity.entityId,
+            ctx.userId!,
+            { requestId: ctx.requestId, metadata: { fromIntake: intakeId } }
+          );
+        }
+      }
+
+      // Dedupe entity IDs (in case same ID provided multiple ways)
+      const uniqueEntityIds = [...new Set(entityIds)];
+
+      if (uniqueEntityIds.length === 0) {
+        throw new ValidationError('At least one entity must be provided');
       }
 
       // Create source from intake item
@@ -646,14 +687,14 @@ const routes: Record<string, Record<string, RouteHandler>> = {
         });
       }
 
-      // Create card from intake item
+      // Create card from intake item with all selected entities
       const card = await cardService.createCard(
         {
           title: intakeItem.title,
           claim: intakeItem.title,
           summary: input.cardSummary,
           category: 'consumer',
-          entityIds: [entityId],
+          entityIds: uniqueEntityIds,
           eventDate: intakeItem.publishedAt.split('T')[0],
           sourceRefs: [source.sourceId],
           evidenceStrength: 'HIGH',
@@ -666,7 +707,7 @@ const routes: Record<string, Record<string, RouteHandler>> = {
         'card',
         card.cardId,
         ctx.userId!,
-        { requestId: ctx.requestId, metadata: { fromIntake: intakeId } }
+        { requestId: ctx.requestId, metadata: { fromIntake: intakeId, entityCount: uniqueEntityIds.length } }
       );
 
       // Mark intake item as promoted
@@ -689,6 +730,7 @@ const routes: Record<string, Record<string, RouteHandler>> = {
       return jsonResponse(201, {
         sourceId: source.sourceId,
         cardId: card.cardId,
+        entityIds: uniqueEntityIds,
       });
     },
   },
