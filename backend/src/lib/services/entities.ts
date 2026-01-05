@@ -10,7 +10,7 @@ import {
   decodeCursor,
   stripKeys,
 } from '../dynamodb.js';
-import { NotFoundError } from '../errors.js';
+import { NotFoundError, ConflictError } from '../errors.js';
 import type { CreateEntityInput, UpdateEntityInput, EntityQueryInput } from '../validation.js';
 
 const TABLE = config.tables.entities;
@@ -23,10 +23,42 @@ export function normalizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/**
+ * Find an existing entity by exact normalized name match.
+ * Returns null if not found.
+ */
+export async function findEntityByName(name: string): Promise<Entity | null> {
+  const normalizedName = normalizeName(name);
+
+  const { items } = await queryItems<Entity & { PK: string; SK: string }>({
+    TableName: TABLE,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'GSI1PK = :pk',
+    ExpressionAttributeValues: {
+      ':pk': `NAME#${normalizedName}`,
+    },
+    Limit: 1,
+  });
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return stripKeys(items[0]);
+}
+
 export async function createEntity(
   input: CreateEntityInput,
   _userId: string
 ): Promise<Entity> {
+  // Check for existing entity with the same normalized name
+  const existing = await findEntityByName(input.name);
+  if (existing) {
+    throw new ConflictError(
+      `Entity with name "${input.name}" already exists (ID: ${existing.entityId})`
+    );
+  }
+
   const now = new Date().toISOString();
   const entityId = ulid();
 
