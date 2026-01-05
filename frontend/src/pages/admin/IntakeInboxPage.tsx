@@ -13,6 +13,42 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: 'REJECTED', label: 'Rejected' },
 ];
 
+/**
+ * Generate a default summary template from intake item metadata.
+ * Uses a deterministic template that the admin can edit before promoting.
+ */
+function generateDefaultSummary(item: IntakeItem): string {
+  const date = new Date(item.publishedAt).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  // Start with the RSS summary if available, otherwise build from title
+  if (item.summary) {
+    // Clean up common RSS cruft: excessive whitespace, [Continue reading...], etc.
+    let cleaned = item.summary
+      .replace(/\[Continue reading.*?\]/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // If summary is too long, truncate at sentence boundary
+    if (cleaned.length > 500) {
+      const sentences = cleaned.split(/(?<=[.!?])\s+/);
+      cleaned = '';
+      for (const sentence of sentences) {
+        if ((cleaned + sentence).length > 450) break;
+        cleaned += (cleaned ? ' ' : '') + sentence;
+      }
+    }
+
+    return cleaned;
+  }
+
+  // Fallback: generate from title and publisher
+  return `On ${date}, ${item.publisher} published: "${item.title}". [Summary to be added by reviewer.]`;
+}
+
 export default function IntakeInboxPage() {
   const [items, setItems] = useState<IntakeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +115,7 @@ export default function IntakeInboxPage() {
     setSelectedEntityId('');
     setNewEntityName(item.publisher);
     setNewEntityType('AGENCY');
-    setCardSummary(item.summary || '');
+    setCardSummary(generateDefaultSummary(item));
     setTags(item.suggestedTags?.join(', ') || '');
     setPromoting(true);
   }
