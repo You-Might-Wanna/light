@@ -405,5 +405,52 @@ describe('validation schemas', () => {
         }).success
       ).toBe(false);
     });
+
+    it('accepts createRelationships array', () => {
+      const result = intakePromoteSchema.parse({
+        entityIds: ['01ARZ3NDEKTSV4RRFFQ69G5FAV', '01ARZ3NDEKTSV4RRFFQ69G5FAW'],
+        createRelationships: [
+          {
+            fromEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+            toEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+            type: 'ACQUIRED',
+            description: 'Acquisition announced in press release',
+          },
+        ],
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.createRelationships).toHaveLength(1);
+      expect(result.createRelationships![0].type).toBe('ACQUIRED');
+    });
+
+    it('accepts createRelationships without description', () => {
+      const result = intakePromoteSchema.parse({
+        entityIds: ['01ARZ3NDEKTSV4RRFFQ69G5FAV', '01ARZ3NDEKTSV4RRFFQ69G5FAW'],
+        createRelationships: [
+          {
+            fromEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+            toEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+            type: 'OWNS',
+          },
+        ],
+        cardSummary: 'Summary of the article',
+      });
+      expect(result.createRelationships).toHaveLength(1);
+      expect(result.createRelationships![0].description).toBeUndefined();
+    });
+
+    it('enforces max 10 createRelationships', () => {
+      expect(
+        intakePromoteSchema.safeParse({
+          entityIds: ['01ARZ3NDEKTSV4RRFFQ69G5FAV'],
+          createRelationships: Array(11).fill({
+            fromEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+            toEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+            type: 'OWNS',
+          }),
+          cardSummary: 'Summary',
+        }).success
+      ).toBe(false);
+    });
   });
 });
