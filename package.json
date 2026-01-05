@@ -20,12 +20,14 @@
     "clean": "npm run clean --workspaces --if-present",
     "release:patch": "bash scripts/bump-version.sh patch",
     "release:minor": "bash scripts/bump-version.sh minor",
-    "release:major": "bash scripts/bump-version.sh major"
+    "release:major": "bash scripts/bump-version.sh major",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
     "eslint": "9.39.2",
     "globals": "17.0.0",
+    "husky": "^9.1.7",
     "typescript": "^5.3.3",
     "typescript-eslint": "8.51.0"
   },
