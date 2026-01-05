@@ -957,13 +957,16 @@ export async function handler(
 
     // Handle Zod validation errors
     if (error instanceof ZodError) {
-      logger.warn({ errors: error.issues }, 'Validation error');
+      // Log full validation details to CloudWatch for debugging
+      logger.warn({ requestId, errors: error.issues }, 'Validation error');
+      // Return field names only (no schema/type details) for UI highlighting
+      const fields = error.issues.map((issue) => issue.path.join('.'));
       return jsonResponse(400, {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Validation failed',
           requestId,
-          details: { issues: error.issues },
+          fields,
         },
       } as ApiError);
     }

@@ -7,6 +7,7 @@ export interface ApiError {
     message: string;
     requestId: string;
     details?: Record<string, unknown>;
+    fields?: string[]; // Field names with validation errors (for UI highlighting)
   };
 }
 

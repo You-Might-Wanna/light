@@ -13,6 +13,10 @@ interface ToastContextValue {
   showError: (error: unknown) => void;
   showSuccess: (message: string) => void;
   dismissToast: (id: string) => void;
+  /** Fields currently flashing due to validation errors */
+  flashingFields: Set<string>;
+  /** Check if a field is currently flashing */
+  isFieldFlashing: (fieldName: string) => boolean;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -31,6 +35,18 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [flashingFields, setFlashingFields] = useState<Set<string>>(new Set());
+
+  const flashFields = useCallback((fields: string[]) => {
+    if (fields.length === 0) return;
+
+    setFlashingFields(new Set(fields));
+
+    // Clear flash after 3 seconds
+    setTimeout(() => {
+      setFlashingFields(new Set());
+    }, 3000);
+  }, []);
 
   const showToast = useCallback((type: Toast['type'], message: string, requestId?: string) => {
     const id = crypto.randomUUID();
@@ -45,6 +61,10 @@ export function ToastProvider({ children }: ToastProviderProps) {
   const showError = useCallback((error: unknown) => {
     if (error instanceof ApiRequestError) {
       showToast('error', error.message, error.requestId);
+      // Flash invalid fields if present
+      if (error.fields && error.fields.length > 0) {
+        flashFields(error.fields);
+      }
     } else if (error instanceof Error) {
       showToast('error', error.message);
     } else if (typeof error === 'string') {
@@ -52,7 +72,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
     } else {
       showToast('error', 'An unexpected error occurred');
     }
-  }, [showToast]);
+  }, [showToast, flashFields]);
 
   const showSuccess = useCallback((message: string) => {
     showToast('success', message);
@@ -62,8 +82,12 @@ export function ToastProvider({ children }: ToastProviderProps) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const isFieldFlashing = useCallback((fieldName: string) => {
+    return flashingFields.has(fieldName);
+  }, [flashingFields]);
+
   return (
-    <ToastContext.Provider value={{ showToast, showError, showSuccess, dismissToast }}>
+    <ToastContext.Provider value={{ showToast, showError, showSuccess, dismissToast, flashingFields, isFieldFlashing }}>
       {children}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </ToastContext.Provider>

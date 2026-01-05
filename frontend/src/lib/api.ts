@@ -44,12 +44,14 @@ function generateRequestId(): string {
 export class ApiRequestError extends Error {
   public readonly requestId: string;
   public readonly statusCode: number;
+  public readonly fields?: string[];
 
-  constructor(message: string, requestId: string, statusCode: number) {
+  constructor(message: string, requestId: string, statusCode: number, fields?: string[]) {
     super(message);
     this.name = 'ApiRequestError';
     this.requestId = requestId;
     this.statusCode = statusCode;
+    this.fields = fields;
   }
 }
 
@@ -88,7 +90,8 @@ class ApiClient {
       throw new ApiRequestError(
         error.error?.message || 'An unexpected error occurred',
         requestId,
-        response.status
+        response.status,
+        error.error?.fields
       );
     }
 
