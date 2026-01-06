@@ -443,6 +443,16 @@ export class LedgerStack extends cdk.Stack {
         SOURCES_BUCKET: sourcesBucket.bucketName,
         KMS_SIGNING_KEY_ID: signingKey.keyId,
         LOG_LEVEL: environment === 'prod' ? 'info' : 'debug',
+        // Env overrides for feeds.json config (optional - defaults from feeds.json if not set)
+        ...(process.env.INTAKE_MAX_ITEMS_PER_RUN && {
+          INTAKE_MAX_ITEMS_PER_RUN: process.env.INTAKE_MAX_ITEMS_PER_RUN,
+        }),
+        ...(process.env.INTAKE_MAX_PER_FEED_PER_RUN && {
+          INTAKE_MAX_PER_FEED_PER_RUN: process.env.INTAKE_MAX_PER_FEED_PER_RUN,
+        }),
+        ...(process.env.INTAKE_FETCH_TIMEOUT_MS && {
+          INTAKE_FETCH_TIMEOUT_MS: process.env.INTAKE_FETCH_TIMEOUT_MS,
+        }),
       },
     });
 

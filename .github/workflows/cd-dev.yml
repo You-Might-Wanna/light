@@ -48,6 +48,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EXTRACTION_PROMPT_BUCKET: ${{ secrets.EXTRACTION_PROMPT_BUCKET }}
+          # Intake config overrides (can be set as repository variables)
+          INTAKE_MAX_ITEMS_PER_RUN: ${{ vars.INTAKE_MAX_ITEMS_PER_RUN || '25' }}
 
       - name: Get Cognito Outputs
         id: cognito-outputs
