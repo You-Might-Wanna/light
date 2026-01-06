@@ -23,7 +23,7 @@ export default defineConfig({
     '@aws-sdk/lib-dynamodb',
     '@aws-sdk/s3-request-presigner',
   ],
-  noExternal: ['@ledger/shared', 'zod', 'ulid', 'pino', '@anthropic-ai/sdk'], // Bundle these deps
+  noExternal: ['@ledger/shared', 'zod', 'ulid', 'pino', '@anthropic-ai/sdk', 'user-agents'], // Bundle these deps
   minify: false,
   splitting: false,
 });
