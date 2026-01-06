@@ -20,6 +20,51 @@ const TABLE = config.tables.intake;
 // Type assertion for imported JSON
 const typedFeedsConfig = feedsConfig as IntakeFeedsConfig;
 
+/**
+ * Get rails config with environment variable overrides.
+ * Environment variables take precedence over feeds.json values.
+ *
+ * Supported env vars:
+ * - INTAKE_MAX_ITEMS_PER_RUN: Override globalRails.maxItemsPerRun
+ * - INTAKE_MAX_PER_FEED_PER_RUN: Override globalRails.maxPerFeedPerRun
+ * - INTAKE_FETCH_TIMEOUT_MS: Override globalRails.fetchTimeoutMs
+ */
+export function getRailsWithEnvOverrides(baseRails: IntakeRails): IntakeRails {
+  const rails = { ...baseRails };
+
+  // Override maxItemsPerRun
+  const maxItemsEnv = process.env.INTAKE_MAX_ITEMS_PER_RUN;
+  if (maxItemsEnv) {
+    const parsed = parseInt(maxItemsEnv, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      rails.maxItemsPerRun = parsed;
+      logger.info({ envVar: 'INTAKE_MAX_ITEMS_PER_RUN', value: parsed }, 'Applied env override');
+    }
+  }
+
+  // Override maxPerFeedPerRun
+  const maxPerFeedEnv = process.env.INTAKE_MAX_PER_FEED_PER_RUN;
+  if (maxPerFeedEnv) {
+    const parsed = parseInt(maxPerFeedEnv, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      rails.maxPerFeedPerRun = parsed;
+      logger.info({ envVar: 'INTAKE_MAX_PER_FEED_PER_RUN', value: parsed }, 'Applied env override');
+    }
+  }
+
+  // Override fetchTimeoutMs
+  const fetchTimeoutEnv = process.env.INTAKE_FETCH_TIMEOUT_MS;
+  if (fetchTimeoutEnv) {
+    const parsed = parseInt(fetchTimeoutEnv, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      rails.fetchTimeoutMs = parsed;
+      logger.info({ envVar: 'INTAKE_FETCH_TIMEOUT_MS', value: parsed }, 'Applied env override');
+    }
+  }
+
+  return rails;
+}
+
 // ============================================================
 // URL Canonicalization
 // ============================================================
@@ -121,6 +166,17 @@ interface RssItem {
   guid?: string;
   description?: string;
   categories?: string[];
+}
+
+/** State tracking for round-robin feed processing */
+interface FeedState {
+  feed: FeedConfig;
+  items: RssItem[];
+  cursor: number;
+  ingested: number;
+  skipped: number;
+  errors: string[];
+  exhausted: boolean;
 }
 
 /**
@@ -399,7 +455,11 @@ export async function processFeed(
 }
 
 /**
- * Run the full intake ingestion process
+ * Run the full intake ingestion process.
+ *
+ * Uses round-robin strategy to ensure at least one item from each enabled feed
+ * before taking additional items from any feed. This prevents early feeds from
+ * exhausting the global limit.
  */
 export async function runIntakeIngestion(): Promise<IntakeRunSummary> {
   const runId = ulid();
@@ -407,27 +467,102 @@ export async function runIntakeIngestion(): Promise<IntakeRunSummary> {
 
   logger.info({ runId }, 'Starting intake ingestion run');
 
-  const { globalRails, feeds } = typedFeedsConfig;
+  const { globalRails: baseRails, feeds } = typedFeedsConfig;
+
+  // Apply environment variable overrides
+  const rails = getRailsWithEnvOverrides(baseRails);
+
+  logger.info(
+    {
+      maxItemsPerRun: rails.maxItemsPerRun,
+      maxPerFeedPerRun: rails.maxPerFeedPerRun,
+      fetchTimeoutMs: rails.fetchTimeoutMs,
+    },
+    'Using rails config'
+  );
+
   const enabledFeeds = feeds.filter((f) => f.enabled);
 
-  const feedResults: IntakeIngestResult[] = [];
+  const feedStates: FeedState[] = [];
+
+  // Fetch all feeds first
+  for (const feed of enabledFeeds) {
+    const state: FeedState = {
+      feed,
+      items: [],
+      cursor: 0,
+      ingested: 0,
+      skipped: 0,
+      errors: [],
+      exhausted: false,
+    };
+
+    try {
+      // Check domain allowlist
+      if (!isAllowedDomain(feed.url, rails.allowedDomains)) {
+        state.errors.push(`Feed URL not in allowed domains: ${feed.url}`);
+        state.exhausted = true;
+      } else {
+        // Rate limit
+        const host = new URL(feed.url).hostname;
+        await waitForRateLimit(host, rails);
+
+        // Fetch and parse feed
+        logger.info({ feedId: feed.id, url: feed.url }, 'Fetching RSS feed');
+        const xml = await fetchFeed(feed.url, rails.fetchTimeoutMs);
+        state.items = parseRssFeed(xml);
+        logger.info({ feedId: feed.id, itemCount: state.items.length }, 'Parsed RSS feed');
+      }
+    } catch (feedError) {
+      const errorMessage =
+        feedError instanceof Error ? feedError.message : 'Unknown error fetching feed';
+      state.errors.push(errorMessage);
+      state.exhausted = true;
+      logger.error({ error: feedError, feedId: feed.id }, 'Error fetching feed');
+    }
+
+    feedStates.push(state);
+  }
+
   let totalIngested = 0;
   let totalSkipped = 0;
 
-  // Process each enabled feed
-  for (const feed of enabledFeeds) {
-    // Check global limit
-    if (totalIngested >= globalRails.maxItemsPerRun) {
-      logger.info({ totalIngested, maxItems: globalRails.maxItemsPerRun }, 'Reached global item limit');
-      break;
+  // Round-robin processing: take one item from each feed in rotation
+  let activeFeedsRemain = true;
+  while (activeFeedsRemain && totalIngested < rails.maxItemsPerRun) {
+    activeFeedsRemain = false;
+
+    for (const state of feedStates) {
+      // Stop if global limit reached
+      if (totalIngested >= rails.maxItemsPerRun) {
+        break;
+      }
+
+      // Skip if this feed is exhausted or hit its per-feed cap
+      if (state.exhausted || state.ingested >= state.feed.perFeedCap) {
+        continue;
+      }
+
+      // Try to ingest one item from this feed
+      const processed = await processNextItem(state, rails);
+      if (processed === 'ingested') {
+        totalIngested++;
+        activeFeedsRemain = true;
+      } else if (processed === 'skipped') {
+        totalSkipped++;
+        activeFeedsRemain = true;
+      }
+      // 'exhausted' means no more items in this feed
     }
-
-    const result = await processFeed(feed, globalRails, runId);
-    feedResults.push(result);
-
-    totalIngested += result.itemsIngested;
-    totalSkipped += result.itemsSkipped;
   }
+
+  // Build results summary
+  const feedResults: IntakeIngestResult[] = feedStates.map((state) => ({
+    feedId: state.feed.id,
+    itemsIngested: state.ingested,
+    itemsSkipped: state.skipped,
+    errors: state.errors,
+  }));
 
   const completedAt = new Date().toISOString();
 
@@ -440,12 +575,100 @@ export async function runIntakeIngestion(): Promise<IntakeRunSummary> {
     feedResults,
   };
 
+  // Log which feeds were processed
+  const feedSummary = feedStates.map((s) => ({
+    feedId: s.feed.id,
+    ingested: s.ingested,
+    skipped: s.skipped,
+    errors: s.errors.length,
+  }));
+
   logger.info(
-    { runId, totalIngested, totalSkipped, feedCount: feedResults.length },
+    { runId, totalIngested, totalSkipped, feedCount: feedResults.length, feedSummary },
     'Completed intake ingestion run'
   );
 
   return summary;
+}
+
+/**
+ * Process the next item from a feed state.
+ * Returns 'ingested', 'skipped', or 'exhausted'.
+ */
+async function processNextItem(
+  state: FeedState,
+  rails: IntakeRails
+): Promise<'ingested' | 'skipped' | 'exhausted'> {
+  while (state.cursor < state.items.length) {
+    const rssItem = state.items[state.cursor];
+    state.cursor++;
+
+    try {
+      // Validate link domain
+      if (!isAllowedDomain(rssItem.link, rails.allowedDomains)) {
+        logger.debug({ link: rssItem.link }, 'Skipping item: link not in allowed domains');
+        state.skipped++;
+        return 'skipped';
+      }
+
+      // Canonicalize URL
+      const canonicalUrl = canonicalizeUrl(rssItem.link, rails.stripQueryParams);
+
+      // Parse and normalize published date
+      const publishedAt = rssItem.pubDate
+        ? new Date(rssItem.pubDate).toISOString()
+        : new Date().toISOString();
+
+      // Generate dedupe key
+      const dedupeKey = generateDedupeKey(canonicalUrl, publishedAt);
+
+      // Check if already exists
+      if (await itemExists(dedupeKey)) {
+        logger.debug({ dedupeKey, title: rssItem.title }, 'Skipping duplicate item');
+        state.skipped++;
+        return 'skipped';
+      }
+
+      // Create intake item
+      const intakeItem: IntakeItem = {
+        intakeId: ulid(),
+        feedId: state.feed.id,
+        canonicalUrl,
+        title: rssItem.title,
+        publishedAt,
+        publisher: state.feed.publisher,
+        summary: rssItem.description ? stripHtml(rssItem.description) : undefined,
+        categories: rssItem.categories,
+        guid: rssItem.guid,
+        dedupeKey,
+        status: 'NEW' as IntakeStatus,
+        suggestedTags: state.feed.defaultTags,
+        ingestedAt: new Date().toISOString(),
+      };
+
+      // Save to DynamoDB
+      await saveIntakeItem(intakeItem);
+      state.ingested++;
+
+      logger.info(
+        { intakeId: intakeItem.intakeId, feedId: state.feed.id, title: intakeItem.title },
+        'Ingested item'
+      );
+
+      return 'ingested';
+    } catch (itemError) {
+      const errorMessage =
+        itemError instanceof Error ? itemError.message : 'Unknown error processing item';
+      state.errors.push(`Item "${rssItem.title}": ${errorMessage}`);
+      logger.error({ error: itemError, title: rssItem.title }, 'Error processing RSS item');
+      state.skipped++;
+      return 'skipped';
+    }
+  }
+
+  // No more items in this feed
+  state.exhausted = true;
+  return 'exhausted';
 }
 
 // ============================================================

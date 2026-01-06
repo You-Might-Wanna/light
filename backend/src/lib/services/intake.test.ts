@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   canonicalizeUrl,
   generateDedupeKey,
   isAllowedDomain,
   parseRssFeed,
+  getRailsWithEnvOverrides,
 } from './intake.js';
+import type { IntakeRails } from '@ledger/shared';
 
 describe('intake service', () => {
   describe('canonicalizeUrl', () => {
@@ -283,6 +285,118 @@ describe('intake service', () => {
 
       expect(items[1].title).toBe('Caroline Ellison, Gary Wang, and Nishad Singh');
       expect(items[1].link).toBe('https://www.sec.gov/enforcement-litigation/litigation-releases/lr-26450');
+    });
+  });
+
+  describe('getRailsWithEnvOverrides', () => {
+    const baseRails: IntakeRails = {
+      maxItemsPerRun: 20,
+      maxPerFeedPerRun: 5,
+      maxRequestsPerHostPerMinute: 30,
+      minDelayMsBetweenRequestsSameHost: 750,
+      fetchTimeoutMs: 15000,
+      maxHtmlSnapshotBytes: 5242880,
+      maxPdfBytes: 26214400,
+      allowedDomains: ['ftc.gov', 'sec.gov'],
+      stripQueryParams: ['utm_source'],
+    };
+
+    beforeEach(() => {
+      // Clear env vars before each test
+      delete process.env.INTAKE_MAX_ITEMS_PER_RUN;
+      delete process.env.INTAKE_MAX_PER_FEED_PER_RUN;
+      delete process.env.INTAKE_FETCH_TIMEOUT_MS;
+    });
+
+    afterEach(() => {
+      // Clean up after each test
+      delete process.env.INTAKE_MAX_ITEMS_PER_RUN;
+      delete process.env.INTAKE_MAX_PER_FEED_PER_RUN;
+      delete process.env.INTAKE_FETCH_TIMEOUT_MS;
+    });
+
+    it('returns base rails unchanged when no env vars set', () => {
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxItemsPerRun).toBe(20);
+      expect(result.maxPerFeedPerRun).toBe(5);
+      expect(result.fetchTimeoutMs).toBe(15000);
+    });
+
+    it('overrides maxItemsPerRun from INTAKE_MAX_ITEMS_PER_RUN', () => {
+      process.env.INTAKE_MAX_ITEMS_PER_RUN = '100';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxItemsPerRun).toBe(100);
+      expect(result.maxPerFeedPerRun).toBe(5); // unchanged
+    });
+
+    it('overrides maxPerFeedPerRun from INTAKE_MAX_PER_FEED_PER_RUN', () => {
+      process.env.INTAKE_MAX_PER_FEED_PER_RUN = '10';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxPerFeedPerRun).toBe(10);
+      expect(result.maxItemsPerRun).toBe(20); // unchanged
+    });
+
+    it('overrides fetchTimeoutMs from INTAKE_FETCH_TIMEOUT_MS', () => {
+      process.env.INTAKE_FETCH_TIMEOUT_MS = '30000';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.fetchTimeoutMs).toBe(30000);
+    });
+
+    it('applies multiple overrides simultaneously', () => {
+      process.env.INTAKE_MAX_ITEMS_PER_RUN = '50';
+      process.env.INTAKE_MAX_PER_FEED_PER_RUN = '15';
+      process.env.INTAKE_FETCH_TIMEOUT_MS = '60000';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxItemsPerRun).toBe(50);
+      expect(result.maxPerFeedPerRun).toBe(15);
+      expect(result.fetchTimeoutMs).toBe(60000);
+    });
+
+    it('ignores invalid non-numeric values', () => {
+      process.env.INTAKE_MAX_ITEMS_PER_RUN = 'invalid';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxItemsPerRun).toBe(20); // unchanged
+    });
+
+    it('ignores zero or negative values', () => {
+      process.env.INTAKE_MAX_ITEMS_PER_RUN = '0';
+      process.env.INTAKE_MAX_PER_FEED_PER_RUN = '-5';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxItemsPerRun).toBe(20); // unchanged
+      expect(result.maxPerFeedPerRun).toBe(5); // unchanged
+    });
+
+    it('does not mutate the original rails object', () => {
+      process.env.INTAKE_MAX_ITEMS_PER_RUN = '100';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.maxItemsPerRun).toBe(100);
+      expect(baseRails.maxItemsPerRun).toBe(20); // original unchanged
+    });
+
+    it('preserves non-overridable rails properties', () => {
+      process.env.INTAKE_MAX_ITEMS_PER_RUN = '100';
+
+      const result = getRailsWithEnvOverrides(baseRails);
+
+      expect(result.allowedDomains).toEqual(['ftc.gov', 'sec.gov']);
+      expect(result.stripQueryParams).toEqual(['utm_source']);
+      expect(result.maxHtmlSnapshotBytes).toBe(5242880);
+      expect(result.maxPdfBytes).toBe(26214400);
     });
   });
 });
