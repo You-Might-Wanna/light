@@ -1,12 +1,12 @@
 // LLM-based entity and relationship extraction service
 
-import type {
-  IntakeItem,
-  SuggestedEntity,
-  SuggestedRelationship,
-  SuggestedSource,
+import {
   EntityType,
   RelationshipType,
+  type IntakeItem,
+  type SuggestedEntity,
+  type SuggestedRelationship,
+  type SuggestedSource,
 } from '@ledger/shared';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { invokeClaudeExtraction } from '../anthropic.js';
@@ -26,31 +26,11 @@ const FETCH_TIMEOUT_MS = 15000;
 // Cached prompt template (loaded once per Lambda cold start)
 let cachedPromptTemplate: string | null = null;
 
-// Entity types for prompt
-const ENTITY_TYPES = [
-  'CORPORATION',
-  'AGENCY',
-  'NONPROFIT',
-  'VENDOR',
-  'INDIVIDUAL_PUBLIC_OFFICIAL',
-] as const;
+// Entity types for prompt - derived from shared enum
+const ENTITY_TYPE_VALUES = Object.values(EntityType);
 
-// Relationship types for prompt
-const RELATIONSHIP_TYPES = [
-  'OWNS',
-  'CONTROLS',
-  'SUBSIDIARY_OF',
-  'ACQUIRED',
-  'DIVESTED',
-  'JV_PARTNER',
-  'AFFILIATED',
-  'PARENT_OF',
-  'CONTRACTOR_TO',
-  'REGULATED_BY',
-  'BOARD_INTERLOCK',
-  'LOBBIED_BY',
-  'OTHER',
-] as const;
+// Relationship types for prompt - derived from shared enum
+const RELATIONSHIP_TYPE_VALUES = Object.values(RelationshipType);
 
 // Expected JSON response schema from LLM
 interface ExtractionResponse {
@@ -290,8 +270,8 @@ async function buildExtractionPrompt(item: IntakeItem): Promise<string> {
     .replace('{{PUBLISHED_AT}}', item.publishedAt)
     .replace('{{URL}}', item.canonicalUrl)
     .replace('{{CONTENT}}', content)
-    .replace('{{ENTITY_TYPES}}', ENTITY_TYPES.join(', '))
-    .replace('{{RELATIONSHIP_TYPES}}', RELATIONSHIP_TYPES.join(', '));
+    .replace('{{ENTITY_TYPES}}', ENTITY_TYPE_VALUES.join(', '))
+    .replace('{{RELATIONSHIP_TYPES}}', RELATIONSHIP_TYPE_VALUES.join(', '));
 }
 
 /**
@@ -372,25 +352,25 @@ function parseExtractionResponse(content: string): ExtractionResponse {
 /**
  * Validate and normalize entity type.
  */
-function validateEntityType(type: string): string {
+function validateEntityType(type: string): EntityType {
   const normalized = type.toUpperCase().replace(/\s+/g, '_');
-  if (ENTITY_TYPES.includes(normalized as typeof ENTITY_TYPES[number])) {
-    return normalized;
+  if (ENTITY_TYPE_VALUES.includes(normalized as EntityType)) {
+    return normalized as EntityType;
   }
   // Default to CORPORATION for unknown types
-  return 'CORPORATION';
+  return EntityType.CORPORATION;
 }
 
 /**
  * Validate and normalize relationship type.
  */
-function validateRelationshipType(type: string): string {
+function validateRelationshipType(type: string): RelationshipType {
   const normalized = type.toUpperCase().replace(/\s+/g, '_');
-  if (RELATIONSHIP_TYPES.includes(normalized as typeof RELATIONSHIP_TYPES[number])) {
-    return normalized;
+  if (RELATIONSHIP_TYPE_VALUES.includes(normalized as RelationshipType)) {
+    return normalized as RelationshipType;
   }
   // Default to OTHER for unknown types
-  return 'OTHER';
+  return RelationshipType.OTHER;
 }
 
 /**

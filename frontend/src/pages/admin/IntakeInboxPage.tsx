@@ -428,25 +428,27 @@ export default function IntakeInboxPage() {
                     {unmatchedSuggestions.map((suggestion, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between bg-white p-2 rounded border border-amber-100"
+                        className="flex items-start gap-2 bg-white p-2 rounded border border-amber-100"
                       >
-                        <div className="flex-1">
-                          <span className="font-medium text-gray-900">
-                            {suggestion.extractedName}
-                          </span>
-                          <span className="ml-2 text-xs text-gray-500">
-                            ({suggestion.suggestedType})
-                          </span>
-                          <span className={`ml-2 text-xs ${getConfidenceColor(suggestion.confidence)}`}>
-                            {Math.round(suggestion.confidence * 100)}% confidence
-                          </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="font-medium text-gray-900">
+                              {suggestion.extractedName}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ({suggestion.suggestedType})
+                            </span>
+                            <span className={`text-xs ${getConfidenceColor(suggestion.confidence)}`}>
+                              {Math.round(suggestion.confidence * 100)}% confidence
+                            </span>
+                          </div>
                           {suggestion.evidenceSnippet && (
                             <p className="text-xs text-gray-500 mt-1 italic truncate">
                               "{suggestion.evidenceSnippet}"
                             </p>
                           )}
                         </div>
-                        <div className="flex gap-2 ml-2">
+                        <div className="flex gap-2 flex-shrink-0">
                           <button
                             onClick={() => handleCreateFromSuggestion(suggestion)}
                             className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
@@ -473,12 +475,20 @@ export default function IntakeInboxPage() {
                     Suggested Relationships
                   </label>
                   <p className="text-xs text-blue-600 mb-2">
-                    Select relationships to create (only those with matched entities can be created)
+                    Select relationships to create. Create missing entities above first to enable grayed-out relationships.
                   </p>
                   <div className="space-y-2">
                     {suggestedRelationships.map((rel, idx) => {
-                      const canCreate = rel.fromEntity.matchedEntityId && rel.toEntity.matchedEntityId;
+                      const fromMatched = rel.fromEntity.matchedEntityId || selectedEntities.some(e => e.name.toLowerCase() === rel.fromEntity.extractedName.toLowerCase());
+                      const toMatched = rel.toEntity.matchedEntityId || selectedEntities.some(e => e.name.toLowerCase() === rel.toEntity.extractedName.toLowerCase());
+                      const canCreate = fromMatched && toMatched;
                       const isSelected = selectedRelationships.has(idx);
+
+                      // Identify which entities are missing
+                      const missingEntities: string[] = [];
+                      if (!fromMatched) missingEntities.push(rel.fromEntity.extractedName);
+                      if (!toMatched) missingEntities.push(rel.toEntity.extractedName);
+
                       return (
                         <div
                           key={idx}
@@ -487,39 +497,41 @@ export default function IntakeInboxPage() {
                               ? isSelected
                                 ? 'bg-blue-100 border-blue-300'
                                 : 'bg-white border-blue-100 hover:bg-blue-50 cursor-pointer'
-                              : 'bg-gray-50 border-gray-200 opacity-60'
+                              : 'bg-gray-50 border-gray-200'
                           }`}
                           onClick={() => canCreate && toggleRelationship(idx)}
                         >
-                          {canCreate && (
+                          {canCreate ? (
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleRelationship(idx)}
                               className="mt-1"
                             />
+                          ) : (
+                            <div className="w-4 mt-1" /> // Spacer for alignment
                           )}
-                          <div className="flex-1">
-                            <div className="text-sm">
-                              <span className="font-medium">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm flex flex-wrap items-center gap-1">
+                              <span className={`font-medium ${!fromMatched ? 'text-amber-600' : ''}`}>
                                 {rel.fromEntity.matchedEntityName || rel.fromEntity.extractedName}
                               </span>
-                              <span className="mx-2 text-gray-500">→</span>
+                              <span className="text-gray-500">→</span>
                               <span className="text-xs px-1.5 py-0.5 bg-gray-200 rounded">
                                 {rel.suggestedType}
                               </span>
-                              <span className="mx-2 text-gray-500">→</span>
-                              <span className="font-medium">
+                              <span className="text-gray-500">→</span>
+                              <span className={`font-medium ${!toMatched ? 'text-amber-600' : ''}`}>
                                 {rel.toEntity.matchedEntityName || rel.toEntity.extractedName}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
                               <span className={`text-xs ${getConfidenceColor(rel.confidence)}`}>
                                 {Math.round(rel.confidence * 100)}% confidence
                               </span>
                               {!canCreate && (
-                                <span className="text-xs text-red-500">
-                                  (entities not matched)
+                                <span className="text-xs text-amber-600">
+                                  Create {missingEntities.join(' and ')} first
                                 </span>
                               )}
                             </div>
