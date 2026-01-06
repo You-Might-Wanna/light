@@ -1,6 +1,6 @@
 {
   "name": "accountability-ledger",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": true,
   "type": "module",
   "description": "Public accountability ledger platform for tracking corporate/government misconduct with verifiable evidence",
