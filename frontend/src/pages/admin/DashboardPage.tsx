@@ -1,16 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import type { DashboardStats } from '@ledger/shared';
 import { api } from '../../lib/api';
-
-interface DashboardStats {
-  publishedCards: number;
-  draftCards: number;
-  reviewCards: number;
-  totalCards: number;
-  pendingReview: number;
-  entitiesTracked: number | string;
-  pendingIntake: number | string;
-}
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -75,7 +66,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-6 md:grid-cols-4 mb-8">
+      <div className="grid gap-6 md:grid-cols-3 mb-8">
         <div className="card p-6">
           <div className="text-3xl font-bold text-gray-900">
             {loading ? '-' : stats?.publishedCards ?? 0}
@@ -93,12 +84,6 @@ export default function AdminDashboardPage() {
             {loading ? '-' : stats?.totalCards ?? 0}
           </div>
           <div className="text-sm text-gray-500">Total Cards</div>
-        </div>
-        <div className="card p-6">
-          <div className="text-3xl font-bold text-yellow-600">
-            {loading ? '-' : stats?.pendingReview ?? 0}
-          </div>
-          <div className="text-sm text-gray-500">Pending Review</div>
         </div>
       </div>
 

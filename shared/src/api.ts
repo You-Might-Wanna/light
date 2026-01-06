@@ -71,3 +71,14 @@ export interface HealthResponse {
   timestamp: string;
   version: string;
 }
+
+// Admin dashboard stats
+export interface DashboardStats {
+  publishedCards: number;
+  draftCards: number;
+  reviewCards: number;
+  totalCards: number;
+  pendingReview: number;
+  entitiesTracked: number;
+  pendingIntake: number;
+}

@@ -47,5 +47,8 @@ credentials.json
 secrets.json
 extraction-template.txt
 
+# Dangerous scripts (not committed for safety)
+scripts/reset-db.sh
+
 # Local config
 .claude/

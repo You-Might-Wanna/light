@@ -506,11 +506,11 @@ const routes: Record<string, Record<string, RouteHandler>> = {
   // Admin: Stats
   'GET /admin/stats': {
     handler: async () => {
-      const cardStats = await cardService.getAdminStats();
-      // Get entity count
-      const entities = await entityService.listEntities({ limit: 1 });
-      // Get pending intake count
-      const pendingIntake = await intakeService.listIntakeByStatus('NEW', 1);
+      const [cardStats, entityCount, pendingIntakeCount] = await Promise.all([
+        cardService.getAdminStats(),
+        entityService.countEntities(),
+        intakeService.countIntakeByStatus('NEW'),
+      ]);
 
       return jsonResponse(200, {
         publishedCards: cardStats.publishedCards,
@@ -518,9 +518,8 @@ const routes: Record<string, Record<string, RouteHandler>> = {
         reviewCards: cardStats.reviewCards,
         totalCards: cardStats.totalCards,
         pendingReview: cardStats.draftCards + cardStats.reviewCards,
-        // These are approximations - will need proper count endpoints
-        entitiesTracked: entities.hasMore ? '10+' : entities.items.length,
-        pendingIntake: pendingIntake.items.length + (pendingIntake.lastEvaluatedKey ? '+' : ''),
+        entitiesTracked: entityCount,
+        pendingIntake: pendingIntakeCount,
       });
     },
   },

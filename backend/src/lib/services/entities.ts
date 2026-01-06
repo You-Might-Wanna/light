@@ -6,6 +6,7 @@ import {
   putItem,
   queryItems,
   scanItems,
+  countScanItems,
   encodeCursor,
   decodeCursor,
   stripKeys,
@@ -181,6 +182,20 @@ export async function listEntities(
     cursor: lastEvaluatedKey ? encodeCursor(lastEvaluatedKey) : undefined,
     hasMore: !!lastEvaluatedKey,
   };
+}
+
+/**
+ * Count total number of entities.
+ */
+export async function countEntities(): Promise<number> {
+  return countScanItems({
+    TableName: TABLE,
+    FilterExpression: 'begins_with(PK, :prefix) AND SK = :sk',
+    ExpressionAttributeValues: {
+      ':prefix': 'ENTITY#',
+      ':sk': 'META',
+    },
+  });
 }
 
 export async function getEntitiesByIds(

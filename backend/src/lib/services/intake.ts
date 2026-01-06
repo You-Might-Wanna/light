@@ -10,7 +10,7 @@ import type {
   IntakeRunSummary,
 } from '@ledger/shared';
 import { config } from '../config.js';
-import { putItem, getItem, queryItems, scanItems, stripKeys } from '../dynamodb.js';
+import { putItem, getItem, queryItems, scanItems, countQueryItems, stripKeys } from '../dynamodb.js';
 import { logger } from '../logger.js';
 import { NotFoundError } from '../errors.js';
 import feedsConfig from '../../config/feeds.json' with { type: 'json' };
@@ -674,6 +674,20 @@ async function processNextItem(
 // ============================================================
 // Query Functions (for admin API)
 // ============================================================
+
+/**
+ * Count intake items by status
+ */
+export async function countIntakeByStatus(status: IntakeStatus): Promise<number> {
+  return countQueryItems({
+    TableName: TABLE,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'GSI1PK = :pk',
+    ExpressionAttributeValues: {
+      ':pk': `STATUS#${status}`,
+    },
+  });
+}
 
 /**
  * List intake items by status

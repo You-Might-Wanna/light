@@ -28,6 +28,7 @@ import type {
   EntitySummary,
   ClaimType,
   EntitySearchResponse,
+  DashboardStats,
 } from '@ledger/shared';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -253,15 +254,7 @@ class ApiClient {
     return this.request(`/admin/cards/${cardId}`);
   }
 
-  async getAdminStats(): Promise<{
-    publishedCards: number;
-    draftCards: number;
-    reviewCards: number;
-    totalCards: number;
-    pendingReview: number;
-    entitiesTracked: number | string;
-    pendingIntake: number | string;
-  }> {
+  async getAdminStats(): Promise<DashboardStats> {
     return this.request('/admin/stats');
   }
 

@@ -66,6 +66,56 @@ export async function scanItems<T>(
   };
 }
 
+/**
+ * Count items matching a query using Select: 'COUNT'.
+ * Paginates through all results to get accurate total count.
+ */
+export async function countQueryItems(
+  params: Omit<QueryCommandInput, 'Select'>
+): Promise<number> {
+  let count = 0;
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await docClient.send(
+      new QueryCommand({
+        ...params,
+        Select: 'COUNT',
+        ExclusiveStartKey: lastEvaluatedKey,
+      })
+    );
+    count += result.Count ?? 0;
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastEvaluatedKey);
+
+  return count;
+}
+
+/**
+ * Count items matching a scan using Select: 'COUNT'.
+ * Paginates through all results to get accurate total count.
+ */
+export async function countScanItems(
+  params: Omit<ScanCommandInput, 'Select'>
+): Promise<number> {
+  let count = 0;
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await docClient.send(
+      new ScanCommand({
+        ...params,
+        Select: 'COUNT',
+        ExclusiveStartKey: lastEvaluatedKey,
+      })
+    );
+    count += result.Count ?? 0;
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastEvaluatedKey);
+
+  return count;
+}
+
 export async function batchWrite(params: BatchWriteCommandInput): Promise<void> {
   await docClient.send(new BatchWriteCommand(params));
 }
