@@ -9,6 +9,7 @@ import {
   type SuggestedSource,
 } from '@ledger/shared';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import UserAgent from 'user-agents';
 import { invokeClaudeExtraction } from '../anthropic.js';
 import { searchEntities, normalizeName } from './entities.js';
 import { config } from '../config.js';
@@ -16,6 +17,9 @@ import { logger } from '../logger.js';
 
 // S3 client for fetching prompt template
 const s3Client = new S3Client({ region: config.region });
+
+// User agent generator - provides realistic desktop browser user agents
+const userAgentGenerator = new UserAgent({ deviceCategory: 'desktop' });
 
 // Maximum content length to send to LLM (characters)
 const MAX_CONTENT_LENGTH = 50000;
@@ -163,11 +167,14 @@ async function fetchArticleContent(item: IntakeItem): Promise<string> {
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     try {
+      // Generate a realistic browser user agent for each request
+      const ua = userAgentGenerator.random();
       const response = await fetch(item.canonicalUrl, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'AccountabilityLedger/1.0 (https://accountabilityledger.org)',
-          Accept: 'text/html, application/xhtml+xml',
+          'User-Agent': ua.toString(),
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
         },
       });
 
